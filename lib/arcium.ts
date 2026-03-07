@@ -25,7 +25,7 @@ export const BLINDBID_PROGRAM_ID = new PublicKey(
 );
 
 export const BLINDBID_MXE_ACCOUNT = new PublicKey(
-  "5FYcGp6o6rsn5M8dojtNwgANpSqgD63yHnnw88MeAf7kT9pkGyeW1iHm4v892jb3qeg98m76QF9TDrAH6fyf1F8a"
+  "32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML"
 );
 
 export const ARCIUM_CLUSTER_OFFSET = 456;
