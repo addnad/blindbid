@@ -30,7 +30,8 @@ export interface PlacedBid {
 
 const ACCENTS = ["#9945FF", "#4ADE80", "#60A5FA", "#A78BFA", "#FF6B35", "#FACC15"];
 
-const DEFAULT_AUCTIONS: Auction[] = [
+const DEFAULT_AUCTIONS: Auction[] = [];// removed
+const _UNUSED: Auction[] = [
   {
     id: "AUC-001", name: "SOLANA NFT DROP #44",
     description: "Exclusive generative art collection. 1-of-1 mint. Sealed bids only.",

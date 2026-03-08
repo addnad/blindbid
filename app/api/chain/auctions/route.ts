@@ -4,6 +4,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 const connection = new Connection("https://devnet.helius-rpc.com/?api-key=free", "confirmed");
 const TREASURY = new PublicKey("5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f");
 const PROGRAM_ID = "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
+const MEMO_PROGRAM_ID = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const ACCENTS = ["#9945FF", "#4ADE80", "#60A5FA", "#A78BFA", "#FF6B35", "#FACC15"];
 
 export async function GET() {
@@ -13,25 +14,27 @@ export async function GET() {
       sigs.map((s) => s.signature),
       { maxSupportedTransactionVersion: 0, commitment: "confirmed" }
     );
-    const auctions = [];
-    const bids = [];
+    const auctions: any[] = [];
+    const bids: any[] = [];
+    let idx = 0;
     for (const tx of txs) {
       if (!tx) continue;
-      const memo = tx.transaction.message.instructions.find(
-        (ix) => ix.program === "spl-memo" || ix.programId?.toString() === "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+      const memoIx = tx.transaction.message.instructions.find(
+        (ix) => ix.programId?.toString() === MEMO_PROGRAM_ID
       );
-      if (!memo?.parsed) continue;
+      if (!memoIx || !('parsed' in memoIx) || !('info' in memoIx.parsed) || !('memo' in memoIx.parsed.info)) continue;
+      const memoText = memoIx.parsed.info.memo;
       let data;
-      try { data = JSON.parse(memo.parsed); } catch { continue; }
+      try { data = JSON.parse(memoText); } catch { continue; }
       if (data.programId !== PROGRAM_ID) continue;
       const signer = tx.transaction.message.accountKeys[0]?.pubkey?.toString();
       const blockTime = (tx.blockTime ?? 0) * 1000;
       if (data.action === "CREATE_AUCTION") {
-        const idx = auctions.length;
+        const currentIdx = idx++;
         const durationMs = (data.duration ?? 24) * 3600000;
         const endsAt = blockTime + durationMs;
         auctions.push({
-          id: `AUC-CHAIN-${idx + 1}`,
+          id: `AUC-CHAIN-${currentIdx + 1}`,
           name: (data.name ?? "UNNAMED AUCTION").toUpperCase(),
           description: `On-chain auction created by ${signer?.slice(0, 8)}... via BlindBid`,
           bids: 0,
@@ -40,7 +43,7 @@ export async function GET() {
           status: endsAt > Date.now() ? "LIVE" : "CLOSED",
           statusColor: endsAt > Date.now() ? "#4ADE80" : "#555",
           type: data.type ?? "FIRST-PRICE",
-          accent: ACCENTS[idx % ACCENTS.length],
+          accent: ACCENTS[currentIdx % ACCENTS.length],
           creator: signer ?? "unknown",
           createdAt: blockTime,
           endsAt,

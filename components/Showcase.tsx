@@ -7,6 +7,7 @@ import CreateAuctionModal from "./CreateAuctionModal";
 import { getAuctions, addBid, type Auction } from "@/lib/store";
 import { type ArciumEncryptedBid } from "@/lib/arcium";
 import { useWallet } from "@solana/wallet-adapter-react";
+import ResolveModal from "./ResolveModal";
 
 function useCountdown(endsAt: number) {
   const [timeLeft, setTimeLeft] = useState("");
@@ -91,6 +92,7 @@ export default function Showcase() {
   const [selected, setSelected]       = useState(0);
   const [bidModal, setBidModal]       = useState(false);
   const [createModal, setCreateModal] = useState(false);
+  const [resolveModal, setResolveModal] = useState(false);
   const [filter, setFilter]           = useState<"ALL" | "LIVE" | "PENDING" | "CLOSED">("ALL");
 
   async function loadAll() {
@@ -245,6 +247,13 @@ export default function Showcase() {
 
           <div className="flex flex-col sm:flex-row gap-[2px]">
             <BidButton auction={a} onBid={() => setBidModal(true)} />
+            {(a.status === "CLOSED" || a.endsAt < Date.now()) && (
+              <button onClick={() => setResolveModal(true)}
+                className="flex items-center justify-center h-[52px] px-[32px] border-none cursor-pointer hover:opacity-90"
+                style={{ background: "#1A1A1A", border: "1px solid #9945FF" }}>
+                <span className="font-ibm-mono text-[11px] text-[#9945FF] tracking-[2px]">RESOLVE AUCTION</span>
+              </button>
+            )}
             <OnChainLink txSignature={a.txSignature} />
           </div>
         </div>
@@ -271,6 +280,15 @@ export default function Showcase() {
         />
       )}
 
+      {resolveModal && (
+        <ResolveModal
+          auctionId={a.id}
+          auctionName={a.name}
+          accent={a.accent}
+          onClose={() => setResolveModal(false)}
+        />
+      )}
+
       {createModal && (
         <CreateAuctionModal
           onClose={() => setCreateModal(false)}
@@ -280,3 +298,4 @@ export default function Showcase() {
     </section>
   );
 }
+// appended - resolve handled inline above

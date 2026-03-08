@@ -65,7 +65,6 @@ export async function submitBidToSolana(
   amountSol: number
 ): Promise<string> {
   const lamports = Math.round(amountSol * LAMPORTS_PER_SOL);
-
   const memoData = JSON.stringify({
     protocol:          "BLINDBID_V1_ARCIUM",
     action:            "SEALED_BID",
@@ -142,6 +141,49 @@ export async function submitAuctionCreation(
       lamports:   AUCTION_CREATION_FEE,
     })
   );
+
+  transaction.add({
+    keys:      [{ pubkey: walletPublicKey, isSigner: true, isWritable: false }],
+    programId: MEMO_PROGRAM_ID,
+    data:      Buffer.from(memoData, "utf-8"),
+  });
+
+  const signed    = await signTransaction(transaction);
+  const signature = await DEVNET_CONNECTION.sendRawTransaction(signed.serialize());
+  await DEVNET_CONNECTION.confirmTransaction({ signature, blockhash, lastValidBlockHeight });
+  return signature;
+}
+
+export async function resolveAuction(
+  walletPublicKey: PublicKey,
+  signTransaction: (tx: Transaction) => Promise<Transaction>,
+  auctionId: string,
+  bidA: { commitment: string; computationOffset: string; bidder: string },
+  bidB: { commitment: string; computationOffset: string; bidder: string },
+): Promise<string> {
+  const memoData = JSON.stringify({
+    protocol:        "BLINDBID_V1_ARCIUM",
+    action:          "REVEAL_WINNER",
+    auctionId,
+    programId:       BLINDBID_PROGRAM_ID.toString(),
+    mxeAccount:      BLINDBID_MXE_ACCOUNT.toString(),
+    clusterOffset:   ARCIUM_CLUSTER_OFFSET,
+    bidA_commitment: bidA.commitment,
+    bidA_offset:     bidA.computationOffset,
+    bidA_bidder:     bidA.bidder,
+    bidB_commitment: bidB.commitment,
+    bidB_offset:     bidB.computationOffset,
+    bidB_bidder:     bidB.bidder,
+    timestamp:       Date.now(),
+  });
+
+  const { blockhash, lastValidBlockHeight } =
+    await DEVNET_CONNECTION.getLatestBlockhash();
+
+  const transaction = new Transaction({
+    recentBlockhash: blockhash,
+    feePayer: walletPublicKey,
+  });
 
   transaction.add({
     keys:      [{ pubkey: walletPublicKey, isSigner: true, isWritable: false }],
