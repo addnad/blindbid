@@ -116,7 +116,7 @@ export default function Showcase() {
   const filtered = filter === "ALL" ? auctions : auctions.filter((a) => a.status === filter);
   const a = filtered[selected] ?? filtered[0];
 
-  if (!a) return null;
+
 
   return (
     <section id="showcase"
@@ -166,6 +166,15 @@ export default function Showcase() {
         </span>
       </div>
 
+      {auctions.length === 0 && !chainLoading ? (
+        <div className="flex flex-col items-center justify-center gap-6 py-24 bg-[#111111]" style={{ border: "1px solid #1A1A1A" }}>
+          <span className="font-ibm-mono text-[10px] text-[#333] tracking-[3px]">NO AUCTIONS YET</span>
+          <span className="font-ibm-mono text-[12px] text-[#555] text-center leading-[1.8]">Be the first to create a sealed auction on Solana devnet.</span>
+          <button onClick={() => setCreateModal(true)} className="flex items-center justify-center h-[52px] px-8 border-none cursor-pointer" style={{ background: "#9945FF" }}>
+            <span className="font-grotesk text-[12px] font-bold text-[#0A0A0A] tracking-[2px]">+ CREATE FIRST AUCTION</span>
+          </button>
+        </div>
+      ) : a ? (
       <div className="flex flex-col md:flex-row gap-[2px] w-full">
         {/* Auction list */}
         <div className="flex flex-col gap-[2px] md:w-[360px] shrink-0 max-h-[600px] overflow-y-auto">
@@ -258,6 +267,8 @@ export default function Showcase() {
           </div>
         </div>
       </div>
+
+      ) : null}
 
       {bidModal && (
         <BidModal
