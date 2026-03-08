@@ -1,6 +1,6 @@
 # BLINDBID — Sealed-Bid Auctions on Solana × Arcium MPC
 
-> **Live:** https://blindbid.auction · **Network:** Solana Devnet · **Hackathon:** Arcium RTG
+> **Live:** https://blindbid.auction · **Network:** Solana Devnet
 
 ---
 
@@ -97,4 +97,4 @@ The BlindBid MXE program is deployed and verified on Solana Devnet:
 
 ## Team
 
-Built for the **Arcium RTG Hackathon** by [@addnad](https://github.com/addnad)
+Built for the **Arcium RTG Hackathon** by @1stbernice
