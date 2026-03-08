@@ -20,7 +20,11 @@ const DURATIONS = [
   { label: "7 DAYS",  value: 168 },
 ];
 
-const TYPES: Auction["type"][] = ["FIRST-PRICE", "VICKREY", "UNIFORM"];
+const TYPES: { value: Auction["type"]; desc: string }[] = [
+  { value: "FIRST-PRICE", desc: "Highest bid wins, pays their bid" },
+  { value: "VICKREY",     desc: "Highest bid wins, pays 2nd price" },
+  { value: "UNIFORM",     desc: "All winners pay the same price" },
+];
 
 export default function CreateAuctionModal({ onClose, onCreated }: Props) {
   const { publicKey, signTransaction, connected } = useWallet();
@@ -140,7 +144,7 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
               <div className="flex flex-col gap-2">
                 <span className="font-ibm-mono text-[10px] text-[#555] tracking-[2px]">AUCTION TYPE</span>
                 <div className="flex gap-[2px]">
-                  {TYPES.map(t => (
+                  {TYPES.map(({ value: t, desc }) => (
                     <button key={t} onClick={() => setType(t)}
                       className="flex-1 flex items-center justify-center h-[44px] border-none cursor-pointer transition-colors"
                       style={{
