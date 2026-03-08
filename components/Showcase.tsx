@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import SectionHeader from "./SectionHeader";
 import BidModal from "./BidModal";
 import CreateAuctionModal from "./CreateAuctionModal";
@@ -8,56 +8,37 @@ import { getAuctions, addBid, type Auction } from "@/lib/store";
 import { type ArciumEncryptedBid } from "@/lib/arcium";
 import { useWallet } from "@solana/wallet-adapter-react";
 
-
-
-
-
 function useCountdown(endsAt: number) {
   const [timeLeft, setTimeLeft] = useState("");
   const [expired, setExpired]   = useState(false);
-
   useEffect(() => {
     function tick() {
       const diff = endsAt - Date.now();
-      if (diff <= 0) {
-        setTimeLeft("ENDED");
-        setExpired(true);
-        return;
-      }
+      if (diff <= 0) { setTimeLeft("ENDED"); setExpired(true); return; }
       const d = Math.floor(diff / 86400000);
       const h = Math.floor((diff % 86400000) / 3600000);
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
-      if (d > 0) {
-        setTimeLeft(d + "D " + String(h).padStart(2, "0") + "H");
-      } else if (h > 0) {
-        setTimeLeft(String(h).padStart(2, "0") + "H " + String(m).padStart(2, "0") + "M");
-      } else {
-        setTimeLeft(String(m).padStart(2, "0") + "M " + String(s).padStart(2, "0") + "S");
-      }
+      if (d > 0) setTimeLeft(d + "D " + String(h).padStart(2,"0") + "H");
+      else if (h > 0) setTimeLeft(String(h).padStart(2,"0") + "H " + String(m).padStart(2,"0") + "M");
+      else setTimeLeft(String(m).padStart(2,"0") + "M " + String(s).padStart(2,"0") + "S");
       setExpired(false);
     }
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [endsAt]);
-
   return { timeLeft, expired };
 }
 
-
 function AuctionStats({ auction }: { auction: Auction }) {
   const { timeLeft, expired } = useCountdown(auction.endsAt);
-
-  const status   = expired ? "CLOSED" : auction.status;
   const statColor = expired ? "#555" : auction.accent;
-
   const stats = [
     { label: "SEALED BIDS", value: String(auction.bids) },
     { label: "FLOOR PRICE", value: "◎ " + auction.floor },
     { label: "CLOSES IN",   value: timeLeft || auction.closes },
   ];
-
   return (
     <div className="grid grid-cols-3 gap-[2px]">
       {stats.map((stat, i) => (
@@ -73,25 +54,16 @@ function AuctionStats({ auction }: { auction: Auction }) {
   );
 }
 
-
 function BidButton({ auction, onBid }: { auction: Auction; onBid: () => void }) {
   const { expired } = useCountdown(auction.endsAt);
   const isLive = auction.status === "LIVE" && !expired;
-
   return (
-    <button
-      onClick={() => isLive && onBid()}
+    <button onClick={() => isLive && onBid()}
       className="flex items-center justify-center h-[52px] px-[32px] transition-colors border-none"
-      style={{
-        background: isLive ? auction.accent : "#1A1A1A",
-        cursor:     isLive ? "pointer" : "not-allowed",
-      }}>
+      style={{ background: isLive ? auction.accent : "#1A1A1A", cursor: isLive ? "pointer" : "not-allowed" }}>
       <span className="font-grotesk text-[12px] font-bold tracking-[2px]"
         style={{ color: isLive ? "#0A0A0A" : "#444" }}>
-        {isLive ? "PLACE SEALED BID"
-          : expired ? "AUCTION ENDED"
-          : auction.status === "PENDING" ? "OPENS SOON"
-          : "AUCTION CLOSED"}
+        {isLive ? "PLACE SEALED BID" : expired ? "AUCTION ENDED" : auction.status === "PENDING" ? "OPENS SOON" : "AUCTION CLOSED"}
       </span>
     </button>
   );
@@ -100,32 +72,44 @@ function BidButton({ auction, onBid }: { auction: Auction; onBid: () => void }) 
 function OnChainLink({ txSignature }: { txSignature?: string }) {
   const href = txSignature
     ? "https://explorer.solana.com/tx/" + txSignature + "?cluster=devnet"
-    : "https://explorer.solana.com/address/MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr?cluster=devnet";
-  const label = txSignature ? "VIEW TX ON-CHAIN" : "VIEW PROGRAM";
+    : "https://explorer.solana.com/address/EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE?cluster=devnet";
   return (
     <a href={href} target="_blank" rel="noreferrer"
       className="flex items-center justify-center h-[52px] px-[32px] bg-[#0A0A0A] hover:border-[#555] transition-colors"
       style={{ border: "1px solid #2D2D2D" }}>
-      <span className="font-ibm-mono text-[11px] text-[#555] tracking-[2px]">{label}</span>
+      <span className="font-ibm-mono text-[11px] text-[#555] tracking-[2px]">
+        {txSignature ? "VIEW TX ON-CHAIN" : "VIEW PROGRAM"}
+      </span>
     </a>
   );
 }
 
 export default function Showcase() {
   const { publicKey } = useWallet();
-  const [auctions, setAuctions]         = useState<Auction[]>([]);
-  const [selected, setSelected]         = useState(0);
-  const [bidModal, setBidModal]         = useState(false);
-  const [createModal, setCreateModal]   = useState(false);
-  const [filter, setFilter]             = useState<"ALL" | "LIVE" | "PENDING" | "CLOSED">("ALL");
+  const [auctions, setAuctions]       = useState<Auction[]>([]);
+  const [chainLoading, setChainLoading] = useState(true);
+  const [selected, setSelected]       = useState(0);
+  const [bidModal, setBidModal]       = useState(false);
+  const [createModal, setCreateModal] = useState(false);
+  const [filter, setFilter]           = useState<"ALL" | "LIVE" | "PENDING" | "CLOSED">("ALL");
 
-  useEffect(() => {
-    setAuctions(getAuctions());
-  }, []);
-
-  function refresh() {
-    setAuctions(getAuctions());
+  async function loadAll() {
+    const local = getAuctions();
+    setAuctions(local);
+    try {
+      const res = await fetch("/api/chain/auctions");
+      const { auctions: onChain } = await res.json();
+      if (onChain?.length > 0) {
+        // Put on-chain auctions first, then local defaults
+        const localDefaults = local.filter((a) => a.creator === "sys");
+        const localUser = local.filter((a) => a.creator !== "sys");
+        setAuctions([...onChain, ...localUser, ...localDefaults]);
+      }
+    } catch {}
+    setChainLoading(false);
   }
+
+  useEffect(() => { loadAll(); }, []);
 
   const filtered = filter === "ALL" ? auctions : auctions.filter((a) => a.status === filter);
   const a = filtered[selected] ?? filtered[0];
@@ -143,11 +127,23 @@ export default function Showcase() {
           title={"BROWSE & BID.\nFULLY SEALED."}
           subtitle="ALL BIDS ENCRYPTED VIA ARCIUM MPC. REVEALED ONLY AT CLOSE."
         />
-        <button onClick={() => setCreateModal(true)}
-          className="flex items-center justify-center h-[52px] px-[28px] shrink-0 cursor-pointer border-none transition-colors hover:opacity-90"
-          style={{ background: "#9945FF" }}>
-          <span className="font-grotesk text-[12px] font-bold text-[#0A0A0A] tracking-[2px]">+ CREATE AUCTION</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {chainLoading && (
+            <span className="font-ibm-mono text-[10px] text-[#555] tracking-[1px] animate-pulse">
+              SCANNING CHAIN...
+            </span>
+          )}
+          {!chainLoading && auctions.some(a => a.id.startsWith("AUC-CHAIN")) && (
+            <span className="font-ibm-mono text-[10px] text-[#4ADE80] tracking-[1px]">
+              ● ON-CHAIN DATA LIVE
+            </span>
+          )}
+          <button onClick={() => setCreateModal(true)}
+            className="flex items-center justify-center h-[52px] px-[28px] shrink-0 cursor-pointer border-none transition-colors hover:opacity-90"
+            style={{ background: "#9945FF" }}>
+            <span className="font-grotesk text-[12px] font-bold text-[#0A0A0A] tracking-[2px]">+ CREATE AUCTION</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter tabs */}
@@ -180,7 +176,12 @@ export default function Showcase() {
                 borderTop: "none", borderRight: "none", borderBottom: "none",
               }}>
               <div className="flex items-center justify-between">
-                <span className="font-ibm-mono text-[9px] text-[#444] tracking-[2px]">{auction.id}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-ibm-mono text-[9px] text-[#444] tracking-[2px]">{auction.id}</span>
+                  {auction.id.startsWith("AUC-CHAIN") && (
+                    <span className="font-ibm-mono text-[8px] text-[#4ADE80] tracking-[1px] px-1 border border-[#4ADE80]">ON-CHAIN</span>
+                  )}
+                </div>
                 <span className="font-ibm-mono text-[9px] tracking-[1px]" style={{ color: auction.statusColor }}>
                   {auction.status}
                 </span>
@@ -202,9 +203,16 @@ export default function Showcase() {
 
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-2">
-              <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">
-                {a.id} // {a.type} AUCTION
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">
+                  {a.id} // {a.type} AUCTION
+                </span>
+                {a.id.startsWith("AUC-CHAIN") && (
+                  <span className="font-ibm-mono text-[9px] text-[#4ADE80] tracking-[1px] px-2 py-0.5 border border-[#4ADE80]">
+                    ● REAL ON-CHAIN
+                  </span>
+                )}
+              </div>
               <h3 className="font-grotesk text-[24px] md:text-[32px] font-bold text-[#F0EEFF] tracking-[-0.5px] leading-tight">
                 {a.name}
               </h3>
@@ -229,8 +237,9 @@ export default function Showcase() {
               <span className="font-ibm-mono text-[10px] text-[#4ADE80] tracking-[2px]">ARCIUM ENCRYPTION ACTIVE</span>
             </div>
             <p className="font-ibm-mono text-[11px] text-[#555] tracking-[0.5px] leading-[1.6]">
-              Bids use x25519 key exchange + AES-GCM encryption via Arcium MPC.
-              No one can see your bid until auction close. Results are trustless and on-chain.
+              Bids encrypted via x25519 + RescueCipher using deployed MXE program
+              <span className="text-[#9945FF]"> EaDV1kv2...YiaqYE</span>.
+              No one sees your bid until auction close.
             </p>
           </div>
 
@@ -257,7 +266,7 @@ export default function Showcase() {
               timestamp:   Date.now(),
               status:      "SEALED",
             });
-            refresh();
+            loadAll();
           }}
         />
       )}
@@ -265,7 +274,7 @@ export default function Showcase() {
       {createModal && (
         <CreateAuctionModal
           onClose={() => setCreateModal(false)}
-          onCreated={() => { refresh(); setCreateModal(false); setFilter("ALL"); setSelected(0); }}
+          onCreated={() => { loadAll(); setCreateModal(false); setFilter("ALL"); setSelected(0); }}
         />
       )}
     </section>
