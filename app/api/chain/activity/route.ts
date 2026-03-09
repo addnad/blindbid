@@ -56,7 +56,7 @@ export async function GET() {
         if (data.creator) creators[data.creator] = (creators[data.creator] ?? 0) + 1;
       }
       if (data.action === "SEALED_BID") {
-        activity.push({ type: "BID", label: shortWallet(data.bidder ?? "anon") + " placed a sealed bid", detail: data.auctionId ?? "", time: timeAgo, ts: blockTime, color: "#4ADE80" });
+        activity.push({ type: "BID", label: "anon placed a sealed bid", detail: data.auctionId ?? "", time: timeAgo, ts: blockTime, color: "#4ADE80" });
         if (data.bidder) bidders[data.bidder] = (bidders[data.bidder] ?? 0) + 1;
       }
       if (data.action === "REVEAL_WINNER") {
