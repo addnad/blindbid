@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import SectionHeader from "./SectionHeader";
 import BidModal from "./BidModal";
 import CreateAuctionModal from "./CreateAuctionModal";
-import { getAuctions, addBid, type Auction } from "@/lib/store";
+import { addBid, type Auction } from "@/lib/store";
 import { type ArciumEncryptedBid } from "@/lib/arcium";
 import { useWallet } from "@solana/wallet-adapter-react";
 import ResolveModal from "./ResolveModal";
@@ -96,24 +96,21 @@ export default function Showcase() {
   const [filter, setFilter]           = useState<"ALL" | "LIVE" | "PENDING" | "CLOSED">("ALL");
 
   async function loadAll() {
-    const local = getAuctions();
-    setAuctions(local);
     try {
       const res = await fetch("/api/chain/auctions");
       const { auctions: onChain } = await res.json();
-      if (onChain?.length > 0) {
-        // Put on-chain auctions first, then local defaults
-        const localDefaults = local.filter((a) => a.creator === "sys");
-        const localUser = local.filter((a) => a.creator !== "sys");
-        setAuctions([...onChain, ...localUser, ...localDefaults]);
-      }
+      setAuctions(onChain ?? []);
     } catch {}
     setChainLoading(false);
   }
 
   useEffect(() => { loadAll(); }, []);
 
-  const filtered = filter === "ALL" ? auctions : auctions.filter((a) => a.status === filter);
+  const filtered = filter === "ALL" ? auctions : auctions.filter((a) => {
+    if (filter === "LIVE")   return a.status === "LIVE" && a.endsAt > Date.now();
+    if (filter === "CLOSED") return a.status === "CLOSED" || a.endsAt <= Date.now();
+    return a.status === filter;
+  });
   const a = filtered[selected] ?? filtered[0];
 
 
@@ -277,7 +274,7 @@ export default function Showcase() {
           onBidPlaced={(encryptedBid: ArciumEncryptedBid, amountSol: number, txSig: string) => {
             if (!publicKey) return;
             addBid({
-              auctionId:   a.id,
+              auctionId:   (a as any).originalId ?? a.id,
               auctionName: a.name,
               bidder:      publicKey.toBase58(),
               amountSol,
@@ -293,9 +290,11 @@ export default function Showcase() {
 
       {resolveModal && (
         <ResolveModal
-          auctionId={a.id}
+          auctionId={(a as any).originalId ?? a.id}
           auctionName={a.name}
           accent={a.accent}
+          createdAt={a.createdAt}
+          endsAt={a.endsAt}
           onClose={() => setResolveModal(false)}
         />
       )}

@@ -14,17 +14,22 @@ interface Bid {
 
 interface Props {
   auctionId: string;
+  createdAt: number;
+  endsAt: number;
   auctionName: string;
   accent: string;
   onClose: () => void;
 }
 
-export default function ResolveModal({ auctionId, auctionName, accent, onClose }: Props) {
+export default function ResolveModal({ auctionId, auctionName, accent, onClose, createdAt, endsAt }: Props) {
+console.log("Modal opened with auctionId:", auctionId);
   const { publicKey, signTransaction } = useWallet();
   const [bids, setBids]           = useState<Bid[]>([]);
   const [loading, setLoading]     = useState(false);
   const [step, setStep]           = useState<"fetch"|"select"|"resolving"|"success"|"error">("fetch");
   const [txSig, setTxSig]         = useState("");
+  const [winner, setWinner]       = useState("");
+  const [polling, setPolling]     = useState(false);
   const [error, setError]         = useState("");
   const [selectedA, setSelectedA] = useState(0);
   const [selectedB, setSelectedB] = useState(1);
@@ -32,7 +37,7 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose }
   async function fetchBids() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/chain/bids?auctionId=${auctionId}`);
+      const res = await fetch(`/api/chain/bids?createdAt=${createdAt}&endsAt=${endsAt}`);
       const { bids: fetched } = await res.json();
       setBids(fetched ?? []);
       setStep("select");
@@ -41,6 +46,42 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose }
       setStep("error");
     }
     setLoading(false);
+  }
+
+
+  async function pollForWinner(revealSig: string) {
+    setPolling(true);
+    const HELIUS = "https://devnet.helius-rpc.com/?api-key=3a7216a5-da98-408f-a35b-d397332205ac";
+    const TREASURY = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const res = await fetch(HELIUS, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "getSignaturesForAddress",
+            params: [TREASURY, { limit: 10 }],
+          }),
+        });
+        const json = await res.json();
+        const sigs = json.result ?? [];
+        for (const sig of sigs) {
+          if (!sig.memo) continue;
+          const clean = sig.memo.replace(/^\[\d+\]\s*/, "");
+          try {
+            const data = JSON.parse(clean);
+            if (data.action === "REVEAL_WINNER" && data.revealTx === revealSig) {
+              setWinner(data.winner ?? "");
+              setPolling(false);
+              return;
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+    setPolling(false);
   }
 
   async function handleResolve() {
@@ -56,6 +97,7 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose }
       );
       setTxSig(sig);
       setStep("success");
+      pollForWinner(sig);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStep("error");
@@ -157,7 +199,16 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose }
                   <span className="font-grotesk text-[24px] font-bold text-[#0A0A0A]">✓</span>
                 </div>
                 <span className="font-grotesk text-[18px] font-bold text-[#F0EEFF]">MPC REVEAL TRIGGERED</span>
-                <span className="font-ibm-mono text-[11px] text-[#555] text-center">ARCIUM NODES COMPUTING WINNER VIA THRESHOLD DECRYPTION</span>
+                {polling ? (
+                  <span className="font-ibm-mono text-[11px] text-[#555] text-center animate-pulse">ARCIUM NODES COMPUTING WINNER...</span>
+                ) : winner ? (
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">WINNER</span>
+                    <span className="font-ibm-mono text-[12px] tracking-[1px]" style={{ color: accent }}>{winner.slice(0,8)}...{winner.slice(-8)}</span>
+                  </div>
+                ) : (
+                  <span className="font-ibm-mono text-[11px] text-[#555] text-center">ARCIUM NODES COMPUTING WINNER VIA THRESHOLD DECRYPTION</span>
+                )}
               </div>
               <div className="flex flex-col gap-2 p-4 bg-[#0A0A0A]" style={{ border: "1px solid #1A1A1A" }}>
                 <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">REVEAL TX</span>
