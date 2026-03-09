@@ -146,13 +146,15 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
                 <div className="flex gap-[2px]">
                   {TYPES.map(({ value: t, desc }) => (
                     <button key={t} onClick={() => setType(t)}
-                      className="flex-1 flex items-center justify-center h-[44px] border-none cursor-pointer transition-colors"
+                      className="flex-1 flex flex-col items-center justify-center gap-1 py-3 h-auto border-none cursor-pointer transition-colors"
                       style={{
                         background: type === t ? "#9945FF" : "#111",
                         border: `1px solid ${type === t ? "#9945FF" : "#2D2D2D"}`,
                       }}>
-                      <span className="font-ibm-mono text-[9px] tracking-[1px]"
-                        style={{ color: type === t ? "#0A0A0A" : "#555" }}>{t}</span>
+                      <span className="font-ibm-mono text-[9px] tracking-[1px] font-bold"
+                        style={{ color: type === t ? "#0A0A0A" : "#888" }}>{t}</span>
+                      <span className="font-ibm-mono text-[8px] tracking-[0.5px] text-center px-1 leading-[1.4]"
+                        style={{ color: type === t ? "#1a0030" : "#444" }}>{desc}</span>
                     </button>
                   ))}
                 </div>
