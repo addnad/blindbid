@@ -13,6 +13,7 @@ interface Auction {
   floor: string;
   endsAt: number;
   accent: string;
+  imageUrl?: string | null;
 }
 
 const IMAGE_MAP: { keywords: string[]; url: string }[] = [
@@ -71,7 +72,7 @@ function AuctionCard({ auction, active }: { auction: Auction; active: boolean })
 
       {/* Image half */}
       <div className="relative w-full md:w-1/2 h-[240px] md:h-full overflow-hidden bg-[#0D0D0D]">
-        <img src={getImage(auction.name)} alt={auction.name}
+        <img src={auction.imageUrl || getImage(auction.name)} alt={auction.name}
           className="w-full h-full object-cover opacity-70 group-hover:opacity-90 group-hover:scale-105 transition-all duration-500" />
         <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, transparent 40%, #111111 100%)" }} />
 
@@ -149,6 +150,13 @@ export default function LiveAuctionPreview() {
       .then(r => r.json())
       .then(d => { setAuctions(d.auctions ?? []); setLoading(false); })
       .catch(() => setLoading(false));
+    const interval = setInterval(() => {
+      fetch("/api/chain/auctions")
+        .then(r => r.json())
+        .then(d => setAuctions(d.auctions ?? []))
+        .catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

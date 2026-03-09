@@ -49,6 +49,8 @@ export async function GET() {
           statusColor: live ? "#4ADE80" : "#555",
           type:        data.type ?? "FIRST-PRICE",
           accent:      ACCENTS[(idx - 1) % ACCENTS.length],
+          imageUrl:    data.imageUrl ?? null,
+          hasImage:    !!(data.imageUrl),
           creator:     "unknown",
           createdAt:   blockTime,
           endsAt,
@@ -69,7 +71,8 @@ export async function GET() {
       if (auction) auction.bids++;
     }
 
-    return NextResponse.json({ auctions, bids });
+    const filtered = auctions.filter((a: any) => a.imageUrl);
+    return NextResponse.json({ auctions: filtered, bids });
   } catch (e) {
     return NextResponse.json({ auctions: [], bids: [], error: String(e) });
   }

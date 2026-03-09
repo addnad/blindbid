@@ -43,7 +43,7 @@ export default function ActivityFeed() {
         .then(r => r.json())
         .then(d => { setActivity(d.activity ?? []); setLeaderboard(d.leaderboard ?? {}); })
         .catch(() => {});
-    }, 15000);
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 
