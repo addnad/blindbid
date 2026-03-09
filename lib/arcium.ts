@@ -69,6 +69,7 @@ export async function submitBidToSolana(
     protocol:          "BLINDBID_V1_ARCIUM",
     action:            "SEALED_BID",
     auctionId,
+    bidder:            walletPublicKey.toString(),
     programId:         BLINDBID_PROGRAM_ID.toString(),
     mxeAccount:        BLINDBID_MXE_ACCOUNT.toString(),
     clusterOffset:     ARCIUM_CLUSTER_OFFSET,
@@ -117,6 +118,7 @@ export async function submitAuctionCreation(
   const memoData = JSON.stringify({
     protocol:   "BLINDBID_V1_ARCIUM",
     action:     "CREATE_AUCTION",
+    creator:    walletPublicKey.toString(),
     programId:  BLINDBID_PROGRAM_ID.toString(),
     mxeAccount: BLINDBID_MXE_ACCOUNT.toString(),
     name:       auctionData.name,

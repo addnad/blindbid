@@ -2,6 +2,7 @@ import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import ChainStats from "@/components/ChainStats";
 import LiveAuctionPreview from "@/components/LiveAuctionPreview";
+import ActivityFeed from "@/components/ActivityFeed";
 import Footer from "@/components/Footer";
 
 export default function Home() {
@@ -11,6 +12,7 @@ export default function Home() {
       <Hero />
       <ChainStats />
       <LiveAuctionPreview />
+      <ActivityFeed />
       <Footer />
     </main>
   );
