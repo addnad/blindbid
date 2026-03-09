@@ -43,16 +43,16 @@ export default function Hero() {
 
       {/* CTAs */}
       <div className="flex flex-col sm:flex-row items-center gap-4 md:gap-[16px] w-full sm:w-auto">
-        <button className="flex items-center justify-center w-full sm:w-[220px] h-[56px] bg-[#9945FF] hover:bg-[#7c2de8] transition-colors">
+        <a href="/auctions" className="flex items-center justify-center w-full sm:w-[220px] h-[56px] bg-[#9945FF] hover:bg-[#7c2de8] transition-colors">
           <span className="font-grotesk text-[12px] font-bold text-[#0A0A0A] tracking-[2px]">
             PLACE SEALED BID
           </span>
-        </button>
-        <button className="flex items-center justify-center w-full sm:w-[200px] h-[56px] bg-[#0A0A0A] border-2 border-[#3D3D3D] hover:border-[#888888] transition-colors">
+        </a>
+        <a href="/how-it-works" className="flex items-center justify-center w-full sm:w-[200px] h-[56px] bg-[#0A0A0A] border-2 border-[#3D3D3D] hover:border-[#888888] transition-colors">
           <span className="font-ibm-mono text-[12px] text-[#888888] tracking-[2px]">
             HOW IT WORKS &gt;
           </span>
-        </button>
+        </a>
       </div>
 
       <div className="h-6 md:h-[24px]" />
