@@ -33,6 +33,7 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
   const [name,        setName]        = useState("");
   const [description, setDescription] = useState("");
   const [floor,       setFloor]       = useState("");
+  const [imageUrl,    setImageUrl]    = useState("");
   const [type,        setType]        = useState<Auction["type"]>("FIRST-PRICE");
   const [duration,    setDuration]    = useState(1);
   const [step,        setStep]        = useState<"form"|"submitting"|"success"|"error">("form");
@@ -46,7 +47,7 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
       const sig = await submitAuctionCreation(
         publicKey,
         signTransaction as (tx: Transaction) => Promise<Transaction>,
-        { name, type, floor: floor + " SOL", durationHours: duration }
+        { name, type, floor: floor + " SOL", durationHours: duration, imageUrl: imageUrl || undefined }
       );
       const auction = addAuction(publicKey.toBase58(), {
         name,
@@ -122,6 +123,41 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
                   rows={2}
                   className="p-4 bg-[#111] font-ibm-mono text-[12px] text-[#F0EEFF] outline-none resize-none w-full"
                   style={{ border: "1px solid #2D2D2D" }} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <span className="font-ibm-mono text-[10px] text-[#555] tracking-[2px]">AUCTION IMAGE <span className="text-[#333]">— OPTIONAL</span></span>
+                <div className="relative">
+                  <input type="file" accept="image/*" id="img-upload" className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files && e.target.files[0];
+                      if (!file) return;
+                      setImageUrl("uploading...");
+                      const fd = new FormData();
+                      fd.append("file", file);
+                      fd.append("upload_preset", "blindbid_uploads");
+                      const res = await fetch("https://api.cloudinary.com/v1_1/dryopwkce/image/upload", { method: "POST", body: fd });
+                      const data = await res.json();
+                      setImageUrl(data.secure_url ?? "");
+                    }} />
+                  <label htmlFor="img-upload"
+                    className="flex items-center gap-3 p-4 bg-[#111] cursor-pointer hover:bg-[#1A1A1A] transition-colors"
+                    style={{ border: "1px solid #2D2D2D" }}>
+                    {imageUrl && imageUrl !== "uploading..." ? (
+                      <img src={imageUrl} alt="preview" className="w-[48px] h-[48px] object-cover" />
+                    ) : (
+                      <div className="w-[48px] h-[48px] bg-[#1A1A1A] flex items-center justify-center" style={{ border: "1px solid #333" }}>
+                        <span className="text-[#555] text-[18px]">+</span>
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-1">
+                      <span className="font-ibm-mono text-[11px] text-[#F0EEFF] tracking-[1px]">
+                        {imageUrl === "uploading..." ? "UPLOADING..." : imageUrl ? "IMAGE UPLOADED ✓" : "CLICK TO UPLOAD IMAGE"}
+                      </span>
+                      <span className="font-ibm-mono text-[9px] text-[#444] tracking-[1px]">JPG, PNG, WEBP — MAX 10MB</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">

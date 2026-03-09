@@ -1,5 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
+import ChainStats from "@/components/ChainStats";
+import LiveAuctionPreview from "@/components/LiveAuctionPreview";
 import Footer from "@/components/Footer";
 
 export default function Home() {
@@ -7,6 +9,8 @@ export default function Home() {
     <main className="flex flex-col w-full bg-[#0A0A0A] pt-[60px]">
       <Navbar />
       <Hero />
+      <ChainStats />
+      <LiveAuctionPreview />
       <Footer />
     </main>
   );

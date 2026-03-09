@@ -112,7 +112,7 @@ export async function submitBidToSolana(
 export async function submitAuctionCreation(
   walletPublicKey: PublicKey,
   signTransaction: (tx: Transaction) => Promise<Transaction>,
-  auctionData: { name: string; type: string; floor: string; durationHours: number }
+  auctionData: { name: string; type: string; floor: string; durationHours: number; imageUrl?: string }
 ): Promise<string> {
   const memoData = JSON.stringify({
     protocol:   "BLINDBID_V1_ARCIUM",
@@ -123,6 +123,7 @@ export async function submitAuctionCreation(
     type:       auctionData.type,
     floor:      auctionData.floor,
     duration:   auctionData.durationHours,
+    imageUrl:   auctionData.imageUrl ?? "",
     timestamp:  Date.now(),
   });
 
