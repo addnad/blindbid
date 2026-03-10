@@ -89,8 +89,9 @@ export default function Showcase() {
   const { publicKey } = useWallet();
   const [auctions, setAuctions]       = useState<Auction[]>([]);
   const [chainLoading, setChainLoading] = useState(true);
-  const [selected, setSelected]       = useState(0);
+  const [selectedId, setSelectedId]   = useState<string | null>(null);
   const [bidModal, setBidModal]       = useState(false);
+  const [bidAuction, setBidAuction]   = useState<any>(null);
   const [createModal, setCreateModal] = useState(false);
   const [resolveModal, setResolveModal] = useState(false);
   const [filter, setFilter]           = useState<"ALL" | "LIVE" | "PENDING" | "CLOSED">("ALL");
@@ -111,7 +112,7 @@ export default function Showcase() {
     if (filter === "CLOSED") return a.status === "CLOSED" || a.endsAt <= Date.now();
     return a.status === filter;
   });
-  const a = filtered[selected] ?? filtered[0];
+  const a = filtered.find(x => (x as any).originalId === selectedId) ?? filtered[0];
 
 
 
@@ -148,7 +149,7 @@ export default function Showcase() {
       {/* Filter tabs */}
       <div className="flex gap-[2px]">
         {(["ALL", "LIVE", "PENDING", "CLOSED"] as const).map((f) => (
-          <button key={f} onClick={() => { setFilter(f); setSelected(0); }}
+          <button key={f} onClick={() => { setFilter(f); setSelectedId(null); }}
             className="flex items-center justify-center h-[36px] px-4 cursor-pointer border-none transition-colors"
             style={{
               background: filter === f ? "#9945FF" : "#111",
@@ -176,11 +177,11 @@ export default function Showcase() {
         {/* Auction list */}
         <div className="flex flex-col gap-[2px] md:w-[360px] shrink-0 max-h-[600px] overflow-y-auto">
           {filtered.map((auction, i) => (
-            <button key={auction.id} onClick={() => setSelected(i)}
+            <button key={auction.id} onClick={() => setSelectedId((auction as any).originalId ?? auction.id)}
               className="flex flex-col gap-2 p-5 text-left transition-colors cursor-pointer w-full shrink-0"
               style={{
-                background: selected === i ? "#1A1A1A" : "#111111",
-                borderLeft: `3px solid ${selected === i ? auction.accent : "#2D2D2D"}`,
+                background: (auction as any).originalId === selectedId || (!selectedId && i === 0) ? "#1A1A1A" : "#111111",
+                borderLeft: `3px solid ${(auction as any).originalId === selectedId || (!selectedId && i === 0) ? auction.accent : "#2D2D2D"}`,
                 borderTop: "none", borderRight: "none", borderBottom: "none",
               }}>
               <div className="flex items-center justify-between">
@@ -252,7 +253,7 @@ export default function Showcase() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-[2px]">
-            <BidButton auction={a} onBid={() => setBidModal(true)} />
+            <BidButton auction={a} onBid={() => { setBidAuction(a); setBidModal(true); }} />
             {(a.status === "CLOSED" || a.endsAt < Date.now()) && (
               <button onClick={() => setResolveModal(true)}
                 className="flex items-center justify-center h-[52px] px-[32px] border-none cursor-pointer hover:opacity-90"
@@ -267,15 +268,15 @@ export default function Showcase() {
 
       ) : null}
 
-      {bidModal && (
+      {bidModal && bidAuction && (
         <BidModal
-          auction={{ id: a.id, name: a.name, floor: a.floor, type: a.type, accent: a.accent }}
+          auction={{ id: (bidAuction as any).originalId ?? bidAuction.id, name: bidAuction.name, floor: bidAuction.floor, type: bidAuction.type, accent: bidAuction.accent }}
           onClose={() => setBidModal(false)}
           onBidPlaced={(encryptedBid: ArciumEncryptedBid, amountSol: number, txSig: string) => {
             if (!publicKey) return;
             addBid({
-              auctionId:   (a as any).originalId ?? a.id,
-              auctionName: a.name,
+              auctionId:   (bidAuction as any).originalId ?? bidAuction.id,
+              auctionName: bidAuction.name,
               bidder:      publicKey.toBase58(),
               amountSol,
               commitment:  encryptedBid.commitment,
@@ -302,7 +303,7 @@ export default function Showcase() {
       {createModal && (
         <CreateAuctionModal
           onClose={() => setCreateModal(false)}
-          onCreated={() => { loadAll(); setCreateModal(false); setFilter("ALL"); setSelected(0); }}
+          onCreated={() => { loadAll(); setCreateModal(false); setFilter("ALL"); setSelectedId(null); }}
         />
       )}
     </section>

@@ -18,19 +18,18 @@ interface LeaderEntry {
 }
 
 interface Leaderboard {
-  topBidders:  LeaderEntry[];
   topCreators: LeaderEntry[];
   topWinners:  LeaderEntry[];
 }
 
 const ICONS = { CREATE: "◈", BID: "◆", REVEAL: "★" };
-const TABS  = ["TOP BIDDERS", "TOP CREATORS", "MOST WINS"] as const;
+const TABS  = ["TOP CREATORS", "MOST WINS"] as const;
 
 export default function ActivityFeed() {
   const [activity,    setActivity]    = useState<ActivityItem[]>([]);
-  const [leaderboard, setLeaderboard] = useState<Leaderboard>({ topBidders: [], topCreators: [], topWinners: [] });
+  const [leaderboard, setLeaderboard] = useState<Leaderboard>({ topCreators: [], topWinners: [] });
   const [loading,     setLoading]     = useState(true);
-  const [tab,         setTab]         = useState<typeof TABS[number]>("TOP BIDDERS");
+  const [tab,         setTab]         = useState<typeof TABS[number]>("TOP CREATORS");
 
   useEffect(() => {
     fetch("/api/chain/activity")
@@ -48,7 +47,6 @@ export default function ActivityFeed() {
   }, []);
 
   const currentList =
-    tab === "TOP BIDDERS"  ? leaderboard.topBidders  :
     tab === "TOP CREATORS" ? leaderboard.topCreators :
     leaderboard.topWinners;
 

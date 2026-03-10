@@ -67,11 +67,10 @@ export async function GET() {
 
     activity.sort((a, b) => b.ts - a.ts);
 
-    const topBidders  = Object.entries(bidders).sort((a,b) => b[1]-a[1]).slice(0,5).map(([w,c]) => ({ wallet: shortWallet(w), full: w, count: c, label: "BIDS" }));
     const topCreators = Object.entries(creators).sort((a,b) => b[1]-a[1]).slice(0,5).map(([w,c]) => ({ wallet: shortWallet(w), full: w, count: c, label: "AUCTIONS" }));
     const topWinners  = Object.entries(winners).sort((a,b) => b[1]-a[1]).slice(0,5).map(([w,c]) => ({ wallet: shortWallet(w), full: w, count: c, label: "WINS" }));
 
-    return NextResponse.json({ activity: activity.slice(0, 7), leaderboard: { topBidders, topCreators, topWinners } });
+    return NextResponse.json({ activity: activity.slice(0, 7), leaderboard: { topCreators, topWinners } });
   } catch (e) {
     return NextResponse.json({ activity: [], leaderboard: { topBidders: [], topCreators: [], topWinners: [] }, error: String(e) });
   }

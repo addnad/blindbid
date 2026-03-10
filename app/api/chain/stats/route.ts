@@ -26,23 +26,12 @@ export async function GET() {
 
     let auctions = 0, bids = 0, reveals = 0;
 
-    // First pass: collect auction IDs that have images
-    const validAuctionIds = new Set<string>();
     for (const sig of sigs) {
       const data = parseMemo(sig.memo);
       if (!data || data.programId !== PROGRAM_ID) continue;
-      if (data.action === "CREATE_AUCTION" && data.imageUrl) {
-        auctions++;
-        if (data.auctionId) validAuctionIds.add(data.auctionId);
-      }
-    }
-
-    // Second pass: count bids and reveals only for valid auctions
-    for (const sig of sigs) {
-      const data = parseMemo(sig.memo);
-      if (!data || data.programId !== PROGRAM_ID) continue;
-      if (data.action === "SEALED_BID" && validAuctionIds.has(data.auctionId))    bids++;
-      if (data.action === "REVEAL_WINNER" && validAuctionIds.has(data.auctionId)) reveals++;
+      if (data.action === "CREATE_AUCTION" && data.imageUrl) auctions++;
+      if (data.action === "SEALED_BID")    bids++;
+      if (data.action === "REVEAL_WINNER") reveals++;
     }
 
     return NextResponse.json({ auctions, bids, reveals });

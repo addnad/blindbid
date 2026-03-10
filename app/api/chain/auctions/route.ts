@@ -40,6 +40,7 @@ export async function GET() {
         const live       = endsAt > Date.now();
         auctions.push({
           id:          `AUC-CHAIN-${++idx}`,
+          originalId:  data.auctionId ?? `AUC-TS-${blockTime}`,
           name:        (data.name ?? "UNNAMED AUCTION").toUpperCase(),
           description: `On-chain sealed auction via BlindBid × Arcium MPC`,
           bids:        0,
@@ -51,6 +52,7 @@ export async function GET() {
           accent:      ACCENTS[(idx - 1) % ACCENTS.length],
           imageUrl:    data.imageUrl ?? null,
           hasImage:    !!(data.imageUrl),
+          cutoffOk:    blockTime > 1773099016718,
           creator:     "unknown",
           createdAt:   blockTime,
           endsAt,
@@ -63,15 +65,13 @@ export async function GET() {
       }
     }
 
-    // match bids to auctions by time window
+    // match bids to auctions by auctionId
     for (const bid of bids) {
-      const auction = auctions.find(
-        (a) => bid.timestamp >= a.createdAt && bid.timestamp <= a.endsAt
-      );
+      const auction = auctions.find((a: any) => a.originalId === bid.auctionId);
       if (auction) auction.bids++;
     }
 
-    const filtered = auctions.filter((a: any) => a.imageUrl);
+    const filtered = auctions.filter((a: any) => a.imageUrl && a.cutoffOk);
     return NextResponse.json({ auctions: filtered, bids });
   } catch (e) {
     return NextResponse.json({ auctions: [], bids: [], error: String(e) });

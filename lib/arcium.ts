@@ -119,6 +119,7 @@ export async function submitAuctionCreation(
     protocol:   "BLINDBID_V1_ARCIUM",
     action:     "CREATE_AUCTION",
     creator:    walletPublicKey.toString(),
+    auctionId:  "AUC-TS-" + Date.now(),
     programId:  BLINDBID_PROGRAM_ID.toString(),
     mxeAccount: BLINDBID_MXE_ACCOUNT.toString(),
     name:       auctionData.name,
