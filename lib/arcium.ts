@@ -110,10 +110,7 @@ export async function submitBidToSolana(
     mxeAccount:        BLINDBID_MXE_ACCOUNT.toString(),
     clusterOffset:     ARCIUM_CLUSTER_OFFSET,
     commitment:        encryptedBid.commitment,
-    ciphertext:        encryptedBid.ciphertext,
-    nonce:             encryptedBid.nonce,
     clientPublicKey:   encryptedBid.clientPublicKey,
-    mxePublicKey:      encryptedBid.mxePublicKey,
     computationOffset: encryptedBid.computationOffset,
     cipher:            encryptedBid.cipher,
     arciumEnv:         encryptedBid.arciumEnv,
@@ -145,6 +142,33 @@ export async function submitBidToSolana(
   const signedMemo = await signTransaction(memoTx);
   const memoSig    = await DEVNET_CONNECTION.sendRawTransaction(signedMemo.serialize());
   await DEVNET_CONNECTION.confirmTransaction({ signature: memoSig, blockhash, lastValidBlockHeight });
+
+  // 1b. Send ciphertext in a separate memo tx (too large for main tx)
+  try {
+    const cipherMemoData = JSON.stringify({
+      protocol:        "BLINDBID_V1_ARCIUM",
+      action:          "SEALED_BID_CIPHER",
+      auctionId,
+      bidder:          walletPublicKey.toString(),
+      commitment:      encryptedBid.commitment,
+      ciphertext:      encryptedBid.ciphertext,
+      nonce:           encryptedBid.nonce,
+      mxePublicKey:    encryptedBid.mxePublicKey,
+    });
+    const { blockhash: bh2, lastValidBlockHeight: lbh2 } =
+      await DEVNET_CONNECTION.getLatestBlockhash();
+    const cipherTx = new Transaction({ recentBlockhash: bh2, feePayer: walletPublicKey });
+    cipherTx.add({
+      keys:      [{ pubkey: walletPublicKey, isSigner: true, isWritable: false }],
+      programId: MEMO_PROGRAM_ID,
+      data:      Buffer.from(cipherMemoData, "utf-8"),
+    });
+    const signedCipher = await signTransaction(cipherTx);
+    const cipherSig    = await DEVNET_CONNECTION.sendRawTransaction(signedCipher.serialize());
+    await DEVNET_CONNECTION.confirmTransaction({ signature: cipherSig, blockhash: bh2, lastValidBlockHeight: lbh2 });
+  } catch (e) {
+    console.warn("Ciphertext memo tx failed (non-fatal):", e);
+  }
 
   // 2. Escrow place_bid — lock SOL in PDA
   try {
@@ -222,6 +246,7 @@ export async function resolveAuction(
   auctionId: string,
   bidA: { commitment: string; computationOffset: string; bidder: string },
   bidB: { commitment: string; computationOffset: string; bidder: string },
+  winner?: string,
 ): Promise<string> {
   const memoData = JSON.stringify({
     protocol:        "BLINDBID_V1_ARCIUM",
@@ -236,6 +261,7 @@ export async function resolveAuction(
     bidB_commitment: bidB.commitment,
     bidB_offset:     bidB.computationOffset,
     bidB_bidder:     bidB.bidder,
+    winner:          winner ?? "",
     timestamp:       Date.now(),
   });
 

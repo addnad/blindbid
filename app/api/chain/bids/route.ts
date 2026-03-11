@@ -37,6 +37,16 @@ export async function GET(req: NextRequest) {
       if (sigs.length < 100) break;
     }
 
+    // First pass: collect cipher memos keyed by commitment
+    const cipherMap = new Map<string, any>();
+    for (const sig of allSigs) {
+      const data = parseMemo(sig.memo);
+      if (!data) continue;
+      if (data.action !== "SEALED_BID_CIPHER") continue;
+      if (auctionId && data.auctionId !== auctionId) continue;
+      if (data.commitment) cipherMap.set(data.commitment, data);
+    }
+
     const bids: any[] = [];
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
@@ -48,14 +58,17 @@ export async function GET(req: NextRequest) {
       if (createdAt && endsAt && (ts < createdAt || ts > endsAt)) continue;
       if (auctionId && data.auctionId !== auctionId) continue;
 
+      // Merge ciphertext from companion tx
+      const cipher = cipherMap.get(data.commitment);
+
       bids.push({
         auctionId:         data.auctionId,
         bidder:            data.bidder ?? "unknown",
         commitment:        data.commitment,
-        ciphertext:        data.ciphertext,       // array of BigInt strings
-        nonce:             data.nonce,             // bs58 encoded
-        clientPublicKey:   data.clientPublicKey,   // bs58 encoded
-        mxePublicKey:      data.mxePublicKey,      // bs58 encoded
+        ciphertext:        cipher?.ciphertext ?? null,
+        nonce:             cipher?.nonce ?? null,
+        clientPublicKey:   data.clientPublicKey,
+        mxePublicKey:      cipher?.mxePublicKey ?? data.mxePublicKey ?? null,
         computationOffset: data.computationOffset,
         timestamp:         ts,
         txSignature:       sig.signature,
