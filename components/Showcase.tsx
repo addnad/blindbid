@@ -109,7 +109,8 @@ export default function Showcase() {
 
   const filtered = filter === "ALL" ? auctions : auctions.filter((a) => {
     if (filter === "LIVE")   return a.status === "LIVE" && a.endsAt > Date.now();
-    if (filter === "CLOSED") return a.status === "CLOSED" || a.endsAt <= Date.now();
+    if (filter === "PENDING") return a.status === "PENDING";
+    if (filter === "CLOSED") return a.status === "CLOSED";
     return a.status === filter;
   });
   const a = filtered.find(x => (x as any).originalId === selectedId) ?? filtered[0];

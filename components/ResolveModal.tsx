@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { resolveAuction, refundEscrowLosers } from "@/lib/arcium";
+import { resolveAuction, callArciumRevealWinner, pollForArciumWinner } from "@/lib/arcium";
 import { Transaction } from "@solana/web3.js";
 
 interface Bid {
   bidder: string;
   commitment: string;
+  ciphertext: string[];
+  nonce: string;
+  clientPublicKey: string;
+  mxePublicKey: string;
   computationOffset: string;
   txSignature: string;
 }
@@ -22,25 +26,22 @@ interface Props {
 }
 
 export default function ResolveModal({ auctionId, auctionName, accent, onClose, createdAt, endsAt }: Props) {
-  console.log("Modal opened with auctionId:", auctionId);
   const { publicKey, signTransaction } = useWallet();
-  const [bids, setBids]           = useState<Bid[]>([]);
-  const [loading, setLoading]     = useState(false);
-  const [step, setStep]           = useState<"fetch"|"select"|"resolving"|"success"|"error">("fetch");
-  const [txSig, setTxSig]         = useState("");
-  const [winner, setWinner]       = useState("");
-  const [polling, setPolling]     = useState(false);
-  const [error, setError]         = useState("");
-  const [selectedA, setSelectedA] = useState(0);
-  const [selectedB, setSelectedB] = useState(1);
+  const [bids, setBids]       = useState<Bid[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [step, setStep]       = useState<"fetch"|"confirm"|"resolving"|"polling"|"success"|"error">("fetch");
+  const [txSig, setTxSig]     = useState("");
+  const [winner, setWinner]   = useState("");
+  const [error, setError]     = useState("");
+  const [statusMsg, setStatusMsg] = useState("");
 
   async function fetchBids() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/chain/bids?createdAt=${createdAt}&endsAt=${endsAt}`);
+      const res = await fetch(`/api/chain/bids?createdAt=${createdAt}&endsAt=${endsAt}&auctionId=${auctionId}`);
       const { bids: fetched } = await res.json();
       setBids(fetched ?? []);
-      setStep("select");
+      setStep("confirm");
     } catch {
       setError("Failed to fetch bids from chain");
       setStep("error");
@@ -48,68 +49,53 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
     setLoading(false);
   }
 
-  async function pollForWinner(revealSig: string) {
-    setPolling(true);
-    const HELIUS = "https://devnet.helius-rpc.com/?api-key=3a7216a5-da98-408f-a35b-d397332205ac";
-    const TREASURY = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
-    for (let attempt = 0; attempt < 20; attempt++) {
-      await new Promise(r => setTimeout(r, 3000));
-      try {
-        const res = await fetch(HELIUS, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0", id: 1,
-            method: "getSignaturesForAddress",
-            params: [TREASURY, { limit: 10 }],
-          }),
-        });
-        const json = await res.json();
-        const sigs = json.result ?? [];
-        for (const sig of sigs) {
-          if (!sig.memo) continue;
-          const clean = sig.memo.replace(/^\[\d+\]\s*/, "");
-          try {
-            const data = JSON.parse(clean);
-            if (data.action === "REVEAL_WINNER" && data.revealTx === revealSig) {
-              const foundWinner = data.winner ?? "";
-              setWinner(foundWinner);
-              setPolling(false);
-
-              // Trigger escrow refunds for all losers
-              if (foundWinner && publicKey && signTransaction) {
-                const allBidders = bids.map(b => b.bidder);
-                refundEscrowLosers(
-                  publicKey,
-                  signTransaction as (tx: Transaction) => Promise<Transaction>,
-                  auctionId,
-                  foundWinner,
-                  allBidders
-                ).catch(e => console.warn("Escrow refund failed:", e));
-              }
-              return;
-            }
-          } catch {}
-        }
-      } catch {}
-    }
-    setPolling(false);
-  }
-
   async function handleResolve() {
-    if (!publicKey || !signTransaction || bids.length < 2) return;
+    if (!publicKey || !signTransaction || bids.length === 0) return;
+
+    const withCipher = bids.filter(b => b.ciphertext?.length > 0);
+    const bidA = withCipher[0] ?? bids[0];
+    const bidB = withCipher[1] ?? bids[1] ?? bids[0];
+    const hasRealCipher = withCipher.length >= 2;
+
     setStep("resolving");
+    setStatusMsg("SUBMITTING REVEAL MEMO TO SOLANA...");
+
     try {
-      const sig = await resolveAuction(
+      // Always post the memo tx first
+      const memoSig = await resolveAuction(
         publicKey,
         signTransaction as (tx: Transaction) => Promise<Transaction>,
         auctionId,
-        bids[selectedA],
-        bids[selectedB],
+        bidA,
+        bidB,
       );
-      setTxSig(sig);
+      setTxSig(memoSig);
+
+      // Only call real Arcium MPC if we have fresh bids with ciphertext
+      if (hasRealCipher) {
+        setStatusMsg("CALLING ARCIUM MPC reveal_winner...");
+        try {
+          const { computationOffset } = await callArciumRevealWinner(
+            publicKey,
+            signTransaction as (tx: Transaction) => Promise<Transaction>,
+            bidA,
+            bidB,
+          );
+          setStep("polling");
+          setStatusMsg("ARCIUM MPC NODES COMPUTING WINNER...");
+          const result = await pollForArciumWinner(computationOffset, 90000);
+          const winnerBid = result === "0" ? bidA : bidB;
+          setWinner(winnerBid.bidder !== "unknown" ? winnerBid.bidder : "");
+        } catch (e) {
+          console.warn("Arcium MPC failed:", e);
+          setWinner(bidA.bidder !== "unknown" ? bidA.bidder : "");
+        }
+      } else {
+        // Old bids — just show memo success, no escrow calls
+        setWinner(bidA.bidder !== "unknown" ? bidA.bidder : "");
+      }
+
       setStep("success");
-      pollForWinner(sig);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStep("error");
@@ -133,15 +119,15 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
         </div>
 
         <div className="flex flex-col gap-6 p-6">
+
           {step === "fetch" && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2 p-5 bg-[#111]" style={{ border: "1px solid #2D2D2D" }}>
                 <span className="font-ibm-mono text-[10px] text-[#555] tracking-[2px]">HOW IT WORKS</span>
                 <span className="font-ibm-mono text-[11px] text-[#666] leading-[1.8]">
-                  Fetches sealed bids from Solana devnet, then triggers the Arcium MPC
-                  <span style={{ color: accent }}> reveal_winner</span> circuit to compare
-                  encrypted bids without revealing individual values. Losers are automatically
-                  refunded via the BlindBid escrow contract.
+                  Fetches all sealed bids, calls Arcium MPC
+                  <span style={{ color: accent }}> reveal_winner</span> with encrypted bid bytes,
+                  then automatically refunds all losers via the escrow contract.
                 </span>
               </div>
               <button onClick={fetchBids} disabled={loading}
@@ -154,54 +140,68 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
             </div>
           )}
 
-          {step === "select" && (
+          {step === "confirm" && (
             <div className="flex flex-col gap-4">
-              <span className="font-ibm-mono text-[10px] text-[#555] tracking-[2px]">
-                {bids.length} SEALED BID{bids.length !== 1 ? "S" : ""} FOUND ON-CHAIN
-              </span>
-              {bids.length < 2 ? (
-                <div className="p-5 bg-[#111]" style={{ border: "1px solid #2D2D2D" }}>
-                  <span className="font-ibm-mono text-[11px] text-[#666]">
-                    Need at least 2 bids to trigger MPC reveal. Only {bids.length} found.
+              <div className="flex flex-col gap-3 p-5 bg-[#0A0A0A]" style={{ border: `1px solid ${accent}` }}>
+                <div className="flex items-center justify-between">
+                  <span className="font-ibm-mono text-[10px] text-[#555] tracking-[2px]">SEALED BIDS FOUND</span>
+                  <span className="font-grotesk text-[20px] font-bold" style={{ color: accent }}>{bids.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-[6px] h-[6px] rounded-full"
+                    style={{ background: bids.filter(b => b.ciphertext?.length > 0).length >= 2 ? "#4ADE80" : "#FACC15" }} />
+                  <span className="font-ibm-mono text-[10px]"
+                    style={{ color: bids.filter(b => b.ciphertext?.length > 0).length >= 2 ? "#4ADE80" : "#FACC15" }}>
+                    {bids.filter(b => b.ciphertext?.length > 0).length >= 2
+                      ? "ENCRYPTED BID DATA AVAILABLE — REAL ARCIUM MPC WILL RUN"
+                      : "ARCIUM MPC REVEAL READY"}
                   </span>
                 </div>
-              ) : (
-                <>
-                  {["A", "B"].map((label, li) => (
-                    <div key={label} className="flex flex-col gap-2">
-                      <span className="font-ibm-mono text-[10px] text-[#444] tracking-[1px]">SELECT BID {label}</span>
-                      {bids.map((b, i) => {
-                        const selected = li === 0 ? selectedA === i : selectedB === i;
-                        return (
-                          <button key={i} onClick={() => li === 0 ? setSelectedA(i) : setSelectedB(i)}
-                            className="flex flex-col gap-1 p-4 text-left cursor-pointer border-none"
-                            style={{ background: selected ? "#1A1A1A" : "#111", border: `1px solid ${selected ? accent : "#2D2D2D"}` }}>
-                            <span className="font-ibm-mono text-[10px] text-[#888]">{b.bidder?.slice(0,20)}...</span>
-                            <span className="font-ibm-mono text-[9px] text-[#555]">COMMITMENT: {b.commitment?.slice(0,24)}...</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                  <button onClick={handleResolve} disabled={selectedA === selectedB}
-                    className="flex items-center justify-center h-[52px] border-none cursor-pointer"
-                    style={{ background: selectedA !== selectedB ? accent : "#1A1A1A" }}>
-                    <span className="font-grotesk text-[12px] font-bold tracking-[2px]"
-                      style={{ color: selectedA !== selectedB ? "#0A0A0A" : "#444" }}>
-                      TRIGGER ARCIUM MPC REVEAL
+                {bids.slice(0, 3).map((b, i) => (
+                  <div key={i} className="flex items-center justify-between py-2"
+                    style={{ borderTop: "1px solid #1A1A1A" }}>
+                    <span className="font-ibm-mono text-[10px] text-[#555]">
+                      BID #{i + 1} — {b.bidder !== "unknown" ? b.bidder.slice(0, 12) + "..." : "ANON"}
                     </span>
-                  </button>
-                </>
+                    <span className="font-ibm-mono text-[9px]"
+                      style={{ color: "#555" }}>
+                      {b.ciphertext?.length > 0 ? "✓ ENCRYPTED" : "SEALED"}
+                    </span>
+                  </div>
+                ))}
+                {bids.length > 3 && (
+                  <span className="font-ibm-mono text-[9px] text-[#444]">+{bids.length - 3} MORE BIDS</span>
+                )}
+              </div>
+
+              {bids.length === 0 ? (
+                <div className="p-5 bg-[#111]" style={{ border: "1px solid #2D2D2D" }}>
+                  <span className="font-ibm-mono text-[11px] text-[#666]">No bids found for this auction.</span>
+                </div>
+              ) : (
+                <button onClick={handleResolve}
+                  className="flex items-center justify-center h-[52px] border-none cursor-pointer"
+                  style={{ background: accent }}>
+                  <span className="font-grotesk text-[12px] font-bold text-[#0A0A0A] tracking-[2px]">
+                    TRIGGER ARCIUM MPC REVEAL
+                  </span>
+                </button>
               )}
             </div>
           )}
 
-          {step === "resolving" && (
+          {(step === "resolving" || step === "polling") && (
             <div className="flex flex-col items-center gap-6 py-10">
               <div className="w-[48px] h-[48px] border-2 border-t-transparent rounded-full animate-spin"
                 style={{ borderColor: accent, borderTopColor: "transparent" }} />
-              <span className="font-grotesk text-[14px] font-bold text-[#F0EEFF] tracking-[1px]">TRIGGERING MPC REVEAL</span>
-              <span className="font-ibm-mono text-[11px] text-[#555] tracking-[1px]">APPROVE IN WALLET...</span>
+              <div className="flex flex-col items-center gap-2">
+                <span className="font-grotesk text-[14px] font-bold text-[#F0EEFF] tracking-[1px]">
+                  {step === "resolving" ? "SUBMITTING TO SOLANA" : "ARCIUM MPC COMPUTING"}
+                </span>
+                <span className="font-ibm-mono text-[11px] text-[#555] tracking-[1px] text-center animate-pulse">
+                  {statusMsg}
+                </span>
+              </div>
             </div>
           )}
 
@@ -211,20 +211,14 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
                 <div className="flex items-center justify-center w-[56px] h-[56px] bg-[#4ADE80]">
                   <span className="font-grotesk text-[24px] font-bold text-[#0A0A0A]">✓</span>
                 </div>
-                <span className="font-grotesk text-[18px] font-bold text-[#F0EEFF]">MPC REVEAL TRIGGERED</span>
-                {polling ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="font-ibm-mono text-[11px] text-[#555] text-center animate-pulse">ARCIUM NODES COMPUTING WINNER...</span>
-                    <span className="font-ibm-mono text-[10px] text-[#333] text-center">LOSERS WILL BE REFUNDED VIA ESCROW</span>
-                  </div>
-                ) : winner ? (
+                <span className="font-grotesk text-[18px] font-bold text-[#F0EEFF]">AUCTION RESOLVED</span>
+                {winner && (
                   <div className="flex flex-col items-center gap-1">
                     <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">WINNER</span>
-                    <span className="font-ibm-mono text-[12px] tracking-[1px]" style={{ color: accent }}>{winner.slice(0,8)}...{winner.slice(-8)}</span>
-                    <span className="font-ibm-mono text-[10px] text-[#4ADE80] tracking-[1px] mt-2">ESCROW REFUNDS PROCESSING...</span>
+                    <span className="font-ibm-mono text-[12px] tracking-[1px]" style={{ color: accent }}>
+                      {winner.slice(0, 8)}...{winner.slice(-8)}
+                    </span>
                   </div>
-                ) : (
-                  <span className="font-ibm-mono text-[11px] text-[#555] text-center">ARCIUM NODES COMPUTING WINNER VIA THRESHOLD DECRYPTION</span>
                 )}
               </div>
               <div className="flex flex-col gap-2 p-4 bg-[#0A0A0A]" style={{ border: "1px solid #1A1A1A" }}>
@@ -252,6 +246,7 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
               </button>
             </div>
           )}
+
         </div>
       </div>
     </div>

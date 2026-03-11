@@ -7,6 +7,7 @@ import {
 } from "@solana/web3.js";
 import { Program, AnchorProvider, Wallet } from "@coral-xyz/anchor";
 import idl from "./blindbid_escrow_idl.json";
+import mxeIdl from "./blindbid_mxe_idl.json";
 
 export const DEVNET_CONNECTION = new Connection(
   "https://api.devnet.solana.com",
@@ -109,8 +110,10 @@ export async function submitBidToSolana(
     mxeAccount:        BLINDBID_MXE_ACCOUNT.toString(),
     clusterOffset:     ARCIUM_CLUSTER_OFFSET,
     commitment:        encryptedBid.commitment,
-    clientPublicKey:   encryptedBid.clientPublicKey.slice(0, 32),
-    mxePublicKey:      encryptedBid.mxePublicKey.slice(0, 32),
+    ciphertext:        encryptedBid.ciphertext,
+    nonce:             encryptedBid.nonce,
+    clientPublicKey:   encryptedBid.clientPublicKey,
+    mxePublicKey:      encryptedBid.mxePublicKey,
     computationOffset: encryptedBid.computationOffset,
     cipher:            encryptedBid.cipher,
     arciumEnv:         encryptedBid.arciumEnv,
@@ -297,4 +300,96 @@ export async function getSolBalance(publicKey: PublicKey): Promise<number> {
 
 export function shortenAddress(address: string, chars = 4): string {
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+}
+
+export async function callArciumRevealWinner(
+  walletPublicKey: PublicKey,
+  signTransaction: (tx: Transaction) => Promise<Transaction>,
+  bidA: {
+    ciphertext: string[];
+    clientPublicKey: string;
+    nonce: string;
+    computationOffset: string;
+  },
+  bidB: {
+    ciphertext: string[];
+    clientPublicKey: string;
+    nonce: string;
+    computationOffset: string;
+  },
+): Promise<{ sig: string; computationOffset: string }> {
+  const bs58 = await import("bs58");
+  const provider = makeProvider(walletPublicKey, signTransaction);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const program = new Program(mxeIdl as any, provider);
+
+  // Convert ciphertext BigInt strings to [u8; 32]
+  function ciphertextToBytes(ct: string[]): number[] {
+    const val = BigInt(ct[0]);
+    const bytes = new Array(32).fill(0);
+    for (let i = 0; i < 32; i++) {
+      bytes[31 - i] = Number((val >> BigInt(i * 8)) & BigInt(0xff));
+    }
+    return bytes;
+  }
+
+  const encryptedBidA = ciphertextToBytes(bidA.ciphertext);
+  const encryptedBidB = ciphertextToBytes(bidB.ciphertext);
+  const bidderPubkey  = Array.from(bs58.default.decode(bidA.clientPublicKey));
+  const nonceBytes    = bs58.default.decode(bidA.nonce);
+  const nonce         = BigInt("0x" + Array.from(nonceBytes).map(b => b.toString(16).padStart(2,"0")).join(""));
+
+  // Generate a unique computation offset
+  const offsetBytes = crypto.getRandomValues(new Uint8Array(8));
+  const compOffset  = Buffer.from(offsetBytes).readBigUInt64LE();
+
+  const sig = await program.methods
+    .revealWinner(
+      compOffset,
+      encryptedBidA,
+      encryptedBidB,
+      bidderPubkey,
+      nonce,
+    )
+    .accounts({
+      payer:             walletPublicKey,
+      mxeAccount:        BLINDBID_MXE_ACCOUNT,
+      systemProgram:     SystemProgram.programId,
+    })
+    .rpc();
+
+  return { sig, computationOffset: compOffset.toString() };
+}
+
+export async function pollForArciumWinner(
+  computationOffset: string,
+  timeoutMs = 60000,
+): Promise<string | null> {
+  const mxeProgramId = BLINDBID_PROGRAM_ID;
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 3000));
+    try {
+      const sigs = await DEVNET_CONNECTION.getSignaturesForAddress(
+        mxeProgramId, { limit: 20 }
+      );
+      for (const sig of sigs) {
+        const tx = await DEVNET_CONNECTION.getParsedTransaction(sig.signature, {
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        });
+        const logs = tx?.meta?.logMessages ?? [];
+        for (const log of logs) {
+          if (log.includes("WinnerRevealedEvent")) {
+            // Extract winner index from log
+            const match = log.match(/winner_index['":\s]+(\w+)/);
+            if (match) return match[1];
+            return "resolved";
+          }
+        }
+      }
+    } catch {}
+  }
+  return null;
 }
