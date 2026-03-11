@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { resolveAuction } from "@/lib/arcium";
+import { resolveAuction, refundEscrowLosers } from "@/lib/arcium";
 import { Transaction } from "@solana/web3.js";
 
 interface Bid {
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export default function ResolveModal({ auctionId, auctionName, accent, onClose, createdAt, endsAt }: Props) {
-console.log("Modal opened with auctionId:", auctionId);
+  console.log("Modal opened with auctionId:", auctionId);
   const { publicKey, signTransaction } = useWallet();
   const [bids, setBids]           = useState<Bid[]>([]);
   const [loading, setLoading]     = useState(false);
@@ -48,7 +48,6 @@ console.log("Modal opened with auctionId:", auctionId);
     setLoading(false);
   }
 
-
   async function pollForWinner(revealSig: string) {
     setPolling(true);
     const HELIUS = "https://devnet.helius-rpc.com/?api-key=3a7216a5-da98-408f-a35b-d397332205ac";
@@ -73,8 +72,21 @@ console.log("Modal opened with auctionId:", auctionId);
           try {
             const data = JSON.parse(clean);
             if (data.action === "REVEAL_WINNER" && data.revealTx === revealSig) {
-              setWinner(data.winner ?? "");
+              const foundWinner = data.winner ?? "";
+              setWinner(foundWinner);
               setPolling(false);
+
+              // Trigger escrow refunds for all losers
+              if (foundWinner && publicKey && signTransaction) {
+                const allBidders = bids.map(b => b.bidder);
+                refundEscrowLosers(
+                  publicKey,
+                  signTransaction as (tx: Transaction) => Promise<Transaction>,
+                  auctionId,
+                  foundWinner,
+                  allBidders
+                ).catch(e => console.warn("Escrow refund failed:", e));
+              }
               return;
             }
           } catch {}
@@ -128,7 +140,8 @@ console.log("Modal opened with auctionId:", auctionId);
                 <span className="font-ibm-mono text-[11px] text-[#666] leading-[1.8]">
                   Fetches sealed bids from Solana devnet, then triggers the Arcium MPC
                   <span style={{ color: accent }}> reveal_winner</span> circuit to compare
-                  encrypted bids without revealing individual values.
+                  encrypted bids without revealing individual values. Losers are automatically
+                  refunded via the BlindBid escrow contract.
                 </span>
               </div>
               <button onClick={fetchBids} disabled={loading}
@@ -200,11 +213,15 @@ console.log("Modal opened with auctionId:", auctionId);
                 </div>
                 <span className="font-grotesk text-[18px] font-bold text-[#F0EEFF]">MPC REVEAL TRIGGERED</span>
                 {polling ? (
-                  <span className="font-ibm-mono text-[11px] text-[#555] text-center animate-pulse">ARCIUM NODES COMPUTING WINNER...</span>
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="font-ibm-mono text-[11px] text-[#555] text-center animate-pulse">ARCIUM NODES COMPUTING WINNER...</span>
+                    <span className="font-ibm-mono text-[10px] text-[#333] text-center">LOSERS WILL BE REFUNDED VIA ESCROW</span>
+                  </div>
                 ) : winner ? (
                   <div className="flex flex-col items-center gap-1">
                     <span className="font-ibm-mono text-[10px] text-[#444] tracking-[2px]">WINNER</span>
                     <span className="font-ibm-mono text-[12px] tracking-[1px]" style={{ color: accent }}>{winner.slice(0,8)}...{winner.slice(-8)}</span>
+                    <span className="font-ibm-mono text-[10px] text-[#4ADE80] tracking-[1px] mt-2">ESCROW REFUNDS PROCESSING...</span>
                   </div>
                 ) : (
                   <span className="font-ibm-mono text-[11px] text-[#555] text-center">ARCIUM NODES COMPUTING WINNER VIA THRESHOLD DECRYPTION</span>
