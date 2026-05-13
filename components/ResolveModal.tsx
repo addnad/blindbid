@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { resolveAuction, callArciumRevealWinner, pollForArciumWinner } from "@/lib/arcium";
+import { resolveAuction, callArciumRevealWinner, pollForArciumWinner, refundEscrowLosers } from "@/lib/arcium";
 import { Transaction } from "@solana/web3.js";
 
 interface Bid {
@@ -55,6 +55,37 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
     if (!publicKey || !signTransaction || bids.length === 0) return;
 
     const withCipher = bids.filter(b => b.ciphertext?.length > 0);
+
+    // Single bid — auto-win, no MPC needed
+    if (withCipher.length === 1 || (withCipher.length === 0 && bids.length === 1)) {
+      const soloWinner = (withCipher[0] ?? bids[0]).bidder;
+      if (!soloWinner || soloWinner === "unknown") {
+        setError("SINGLE BID FOUND BUT BIDDER ADDRESS IS UNKNOWN. CANNOT SETTLE.");
+        setStep("error");
+        return;
+      }
+      setStep("resolving");
+      setStatusMsg("SINGLE BID — AUTO-WIN, SETTLING ESCROW...");
+      const memoSig = await resolveAuction(
+        publicKey,
+        signTransaction as (tx: Transaction) => Promise<Transaction>,
+        auctionId,
+        withCipher[0] ?? bids[0],
+        withCipher[0] ?? bids[0],
+        soloWinner,
+      );
+      setTxSig(memoSig);
+      setWinner(soloWinner);
+      await refundEscrowLosers(
+        publicKey,
+        signTransaction as (tx: Transaction) => Promise<Transaction>,
+        auctionId,
+        soloWinner,
+        [soloWinner],
+      );
+      setStep("success");
+      return;
+    }
 
     if (withCipher.length < 2) {
       setError("NOT ENOUGH ENCRYPTED BIDS TO RUN MPC. AT LEAST 2 BIDS WITH CIPHERTEXT REQUIRED.");
@@ -132,6 +163,18 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
       );
       setTxSig(memoSig);
       setWinner(resolvedWinner);
+
+      // Settle escrow: winner pays creator, losers get refunded
+      setStatusMsg("SETTLING ESCROW — REFUNDING LOSERS...");
+      const allBidders = [...new Set(bids.map(b => b.bidder).filter(b => b && b !== "unknown"))];
+      await refundEscrowLosers(
+        publicKey,
+        signTransaction as (tx: Transaction) => Promise<Transaction>,
+        auctionId,
+        resolvedWinner,
+        allBidders,
+      );
+
       setStep("success");
 
     } catch (e) {

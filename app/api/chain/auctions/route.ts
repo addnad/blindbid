@@ -151,6 +151,14 @@ export async function GET() {
       if (auction) auction.bids++;
     }
 
+    // Closed auctions with zero bids become EXPIRED — nothing to resolve
+    for (const auction of auctions) {
+      if (auction.status === "PENDING" && auction.bids === 0) {
+        auction.status = "EXPIRED";
+        auction.statusColor = "#444";
+      }
+    }
+
     return NextResponse.json({ auctions, bids });
   } catch (e) {
     return NextResponse.json({ auctions: [], bids: [], error: String(e) });
