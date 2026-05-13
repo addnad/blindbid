@@ -83,6 +83,29 @@ export async function GET(req: NextRequest) {
       if (data.commitment) cipherMap.set(data.commitment, data);
     }
 
+    // Pre-filter relevant bid sigs
+    const bidSigs = allSigs.filter(sig => {
+      const data = parseMemo(sig.memo);
+      if (!data || data.programId !== PROGRAM_ID || data.action !== "SEALED_BID") return false;
+      const ts = (sig.blockTime ?? 0) * 1000;
+      if (createdAt && endsAt && (ts < createdAt || ts > endsAt)) return false;
+      if (auctionId && data.auctionId !== auctionId) return false;
+      return true;
+    });
+
+    // Validate all bid sigs in parallel
+    const bidValidations = await Promise.all(
+      bidSigs.map(async sig => {
+        const data = parseMemo(sig.memo);
+        const claimedBidder = data.bidder ?? "";
+        const valid = claimedBidder
+          ? await fetchAndValidateTx(sig.signature, claimedBidder, HELIUS)
+          : false;
+        return { signature: sig.signature, valid };
+      })
+    );
+    const validBidSigs = new Set(bidValidations.filter(r => r.valid).map(r => r.signature));
+
     const bids: any[] = [];
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
@@ -94,9 +117,7 @@ export async function GET(req: NextRequest) {
       if (createdAt && endsAt && (ts < createdAt || ts > endsAt)) continue;
       if (auctionId && data.auctionId !== auctionId) continue;
 
-      // Validate: tx signer must match claimed bidder, and treasury transfer must exist
-      const claimedBidder = data.bidder ?? "";
-      if (!claimedBidder || !(await fetchAndValidateTx(sig.signature, claimedBidder, HELIUS))) continue;
+      if (!validBidSigs.has(sig.signature)) continue;
 
       // Merge ciphertext from companion tx
       const cipher = cipherMap.get(data.commitment);

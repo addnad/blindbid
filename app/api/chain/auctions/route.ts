@@ -86,6 +86,21 @@ export async function GET() {
       }
     }
 
+    // Pre-validate all relevant sigs in parallel before building auctions/bids
+    const validationTargets = allSigs
+      .map(sig => ({ sig, data: parseMemo(sig.memo) }))
+      .filter(({ data }) => data && data.programId === PROGRAM_ID)
+      .filter(({ data }) => data.action === "CREATE_AUCTION" || data.action === "SEALED_BID");
+
+    const validationResults = await Promise.all(
+      validationTargets.map(async ({ sig, data }) => {
+        const signer = data.action === "CREATE_AUCTION" ? (data.creator ?? "") : (data.bidder ?? "");
+        const valid = signer ? await fetchAndValidateTx(sig.signature, signer, HELIUS) : false;
+        return { signature: sig.signature, valid };
+      })
+    );
+    const validSigs = new Set(validationResults.filter(r => r.valid).map(r => r.signature));
+
     // Second pass: build auctions and bids
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
@@ -94,9 +109,7 @@ export async function GET() {
 
       if (data.action === "CREATE_AUCTION") {
         if (!data.imageUrl) continue; // skip auctions without images
-        // Validate: tx signer must match claimed creator, and treasury transfer must exist
-        const creator = data.creator ?? "";
-        if (!creator || !(await fetchAndValidateTx(sig.signature, creator, HELIUS))) continue;
+        if (!validSigs.has(sig.signature)) continue;
         const durationMs = (data.duration ?? 24) * 3_600_000;
         const endsAt     = blockTime + durationMs;
         const now        = Date.now();
@@ -140,8 +153,7 @@ export async function GET() {
       }
 
       if (data.action === "SEALED_BID") {
-        const bidder = data.bidder ?? "";
-        if (!bidder || !(await fetchAndValidateTx(sig.signature, bidder, HELIUS))) continue;
+        if (!validSigs.has(sig.signature)) continue;
         bids.push({ auctionId: data.auctionId, timestamp: blockTime });
       }
     }
