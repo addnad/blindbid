@@ -255,11 +255,12 @@ export default function Showcase() {
 
           <div className="flex flex-col sm:flex-row gap-[2px]">
             <BidButton auction={a} onBid={() => { setBidAuction(a); setBidModal(true); }} />
-            {(a.status === "CLOSED" || a.endsAt < Date.now()) && (
+            {a.endsAt < Date.now() && (
               <button onClick={() => setResolveModal(true)}
+                disabled={a.status === "PENDING" && publicKey?.toString() !== a.creator}
                 className="flex items-center justify-center h-[52px] px-[32px] border-none cursor-pointer hover:opacity-90"
-                style={{ background: "#1A1A1A", border: "1px solid #9945FF" }}>
-                <span className="font-ibm-mono text-[11px] text-[#9945FF] tracking-[2px]">RESOLVE AUCTION</span>
+                style={{ background: "#1A1A1A", border: "1px solid #9945FF", opacity: a.status === "PENDING" && publicKey?.toString() !== a.creator ? 0.3 : 1 }}>
+                <span className="font-ibm-mono text-[11px] text-[#9945FF] tracking-[2px]">{a.status === "CLOSED" ? "VIEW WINNER" : "RESOLVE AUCTION"}</span>
               </button>
             )}
             <OnChainLink txSignature={a.txSignature} />
@@ -297,6 +298,8 @@ export default function Showcase() {
           accent={a.accent}
           createdAt={a.createdAt}
           endsAt={a.endsAt}
+          winner={(a as any).winner ?? ""}
+          onResolved={() => { setResolveModal(false); window.location.reload(); }}
           onClose={() => setResolveModal(false)}
         />
       )}

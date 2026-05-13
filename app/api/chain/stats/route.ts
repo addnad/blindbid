@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const HELIUS    = "https://devnet.helius-rpc.com/?api-key=3a7216a5-da98-408f-a35b-d397332205ac";
+const HELIUS    = process.env.HELIUS_RPC_URL!;
 const TREASURY  = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
 const PROGRAM_ID = "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
 

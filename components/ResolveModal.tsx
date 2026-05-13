@@ -22,16 +22,18 @@ interface Props {
   endsAt: number;
   auctionName: string;
   accent: string;
+  winner?: string;
+  onResolved?: () => void;
   onClose: () => void;
 }
 
-export default function ResolveModal({ auctionId, auctionName, accent, onClose, createdAt, endsAt }: Props) {
+export default function ResolveModal({ auctionId, auctionName, accent, onClose, onResolved, createdAt, endsAt, winner: existingWinner }: Props) {
   const { publicKey, signTransaction } = useWallet();
   const [bids, setBids]       = useState<Bid[]>([]);
   const [loading, setLoading] = useState(false);
-  const [step, setStep]       = useState<"fetch"|"confirm"|"resolving"|"polling"|"success"|"error">("fetch");
+  const [step, setStep]       = useState<"already-resolved"|"fetch"|"confirm"|"resolving"|"polling"|"success"|"error">(existingWinner ? "already-resolved" : "fetch");
   const [txSig, setTxSig]     = useState("");
-  const [winner, setWinner]   = useState("");
+  const [winner, setWinner]   = useState(existingWinner ?? "");
   const [error, setError]     = useState("");
   const [statusMsg, setStatusMsg] = useState("");
 
@@ -53,49 +55,85 @@ export default function ResolveModal({ auctionId, auctionName, accent, onClose, 
     if (!publicKey || !signTransaction || bids.length === 0) return;
 
     const withCipher = bids.filter(b => b.ciphertext?.length > 0);
-    const bidA = withCipher[0] ?? bids[0];
-    const bidB = withCipher[1] ?? bids[1] ?? bids[0];
-    const hasRealCipher = withCipher.length >= 2;
+
+    if (withCipher.length < 2) {
+      setError("NOT ENOUGH ENCRYPTED BIDS TO RUN MPC. AT LEAST 2 BIDS WITH CIPHERTEXT REQUIRED.");
+      setStep("error");
+      return;
+    }
 
     setStep("resolving");
-    setStatusMsg("SUBMITTING REVEAL MEMO TO SOLANA...");
+    setStatusMsg("STARTING ARCIUM MPC TOURNAMENT...");
 
     try {
-      // Always post the memo tx first
-      const memoSig = await resolveAuction(
-        publicKey,
-        signTransaction as (tx: Transaction) => Promise<Transaction>,
-        auctionId,
-        bidA,
-        bidB,
-      );
-      setTxSig(memoSig);
+      // N-bid tournament: reduce all bids to single winner via pairwise MPC rounds
+      // No fallback — if MPC fails at any round, we fail closed
+      let survivors = [...withCipher];
+      let round = 1;
 
-      // Only call real Arcium MPC if we have fresh bids with ciphertext
-      if (hasRealCipher) {
-        setStatusMsg("CALLING ARCIUM MPC reveal_winner...");
-        try {
+      while (survivors.length > 1) {
+        setStatusMsg(`MPC ROUND ${round}: COMPARING ${survivors.length} BIDS...`);
+        const nextRound: typeof survivors = [];
+
+        for (let i = 0; i < survivors.length; i += 2) {
+          const bidA = survivors[i];
+          const bidB = survivors[i + 1];
+
+          if (!bidB) {
+            // Odd one out — auto-advances
+            nextRound.push(bidA);
+            continue;
+          }
+
+          setStatusMsg(`MPC ROUND ${round}: CALLING ARCIUM reveal_winner...`);
           const { computationOffset } = await callArciumRevealWinner(
             publicKey,
             signTransaction as (tx: Transaction) => Promise<Transaction>,
             bidA,
             bidB,
           );
+
           setStep("polling");
-          setStatusMsg("ARCIUM MPC NODES COMPUTING WINNER...");
-          const result = await pollForArciumWinner(computationOffset, 90000);
-          const winnerBid = result === "0" ? bidA : bidB;
-          setWinner(winnerBid.bidder !== "unknown" ? winnerBid.bidder : "");
-        } catch (e) {
-          console.warn("Arcium MPC failed:", e);
-          setWinner(bidA.bidder !== "unknown" ? bidA.bidder : "");
+          setStatusMsg(`MPC ROUND ${round}: ARCIUM NODES COMPUTING...`);
+          const result = await pollForArciumWinner(
+            computationOffset,
+            90000
+          );
+
+          // Fail closed — if result is not 0 or 1, MPC returned garbage
+          if (result !== "0" && result !== "1") {
+            throw new Error(`MPC returned unexpected result '${result}' in round ${round}. Cannot determine winner safely.`);
+          }
+
+          nextRound.push(result === "0" ? bidA : bidB);
+          setStep("resolving");
         }
-      } else {
-        // Old bids — just show memo success, no escrow calls
-        setWinner(bidA.bidder !== "unknown" ? bidA.bidder : "");
+
+        survivors = nextRound;
+        round++;
       }
 
+      const winnerBid = survivors[0];
+      if (!winnerBid || !winnerBid.bidder || winnerBid.bidder === "unknown") {
+        throw new Error("MPC resolved but winner bidder address is unknown. Cannot finalise.");
+      }
+
+      const resolvedWinner = winnerBid.bidder;
+
+      // Post REVEAL_WINNER memo on-chain
+      setStatusMsg("SUBMITTING REVEAL MEMO TO SOLANA...");
+      const memoSig = await resolveAuction(
+        publicKey,
+        signTransaction as (tx: Transaction) => Promise<Transaction>,
+        auctionId,
+        withCipher[0],
+        withCipher[1],
+        resolvedWinner,
+      );
+      setTxSig(memoSig);
+      setWinner(resolvedWinner);
       setStep("success");
+
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStep("error");

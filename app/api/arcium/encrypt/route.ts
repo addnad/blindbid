@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { x25519, RescueCipher, getMXEPublicKey, getArciumProgramId } from "@arcium-hq/client";
+import { x25519, RescueCipher, getMXEPublicKey } from "@arcium-hq/client";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
 import bs58 from "bs58";
 
 const MXE_PROGRAM_ID = new PublicKey("EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE");
 const MXE_ACCOUNT    = new PublicKey("32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML");
-const connection     = new Connection("https://api.devnet.solana.com", "confirmed");
+const connection     = new Connection(process.env.HELIUS_RPC_URL ?? "https://api.devnet.solana.com", "confirmed");
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
     const clientPrivateKey = x25519.utils.randomSecretKey();
     const clientPublicKey  = x25519.getPublicKey(clientPrivateKey);
 
+    // Fetch real MXE public key — fail closed, no random fallback
     let mxePublicKey: Uint8Array;
     try {
       const kp = Keypair.generate();
@@ -30,9 +31,20 @@ export async function POST(req: NextRequest) {
       };
       const provider = new AnchorProvider(connection, dummyWallet as any, { commitment: "confirmed" });
       const key = await getMXEPublicKey(provider, MXE_PROGRAM_ID);
-      mxePublicKey = key ?? x25519.getPublicKey(x25519.utils.randomSecretKey());
-    } catch {
-      mxePublicKey = x25519.getPublicKey(x25519.utils.randomSecretKey());
+      if (!key) {
+        console.error("getMXEPublicKey returned null — Arcium MXE unreachable");
+        return NextResponse.json(
+          { error: "Arcium MXE public key unavailable. Cannot encrypt bid safely. Please try again." },
+          { status: 503 }
+        );
+      }
+      mxePublicKey = key;
+    } catch (mxeError) {
+      console.error("Failed to fetch MXE public key:", mxeError);
+      return NextResponse.json(
+        { error: "Arcium MXE public key fetch failed. Cannot encrypt bid safely. Please try again." },
+        { status: 503 }
+      );
     }
 
     const sharedSecret = x25519.getSharedSecret(clientPrivateKey, mxePublicKey);

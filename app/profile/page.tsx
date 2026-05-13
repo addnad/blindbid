@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { getSolBalance, shortenAddress } from "@/lib/arcium";
+import { getSolBalance, shortenAddress } from "@/lib/utils";
 import { getAuctionsByCreator, getBidsByWallet, type Auction, type PlacedBid } from "@/lib/store";
 import Link from "next/link";
 

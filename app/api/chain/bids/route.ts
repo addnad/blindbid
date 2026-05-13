@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const HELIUS    = "https://devnet.helius-rpc.com/?api-key=3a7216a5-da98-408f-a35b-d397332205ac";
+const HELIUS    = process.env.HELIUS_RPC_URL!;
 const TREASURY  = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
 const PROGRAM_ID = "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
 
@@ -8,6 +8,42 @@ function parseMemo(memo: string | null): any {
   if (!memo) return null;
   try { return JSON.parse(memo.replace(/^\[\d+\]\s*/, "")); }
   catch { return null; }
+}
+
+
+async function fetchAndValidateTx(sig: string, expectedSigner: string, helius: string): Promise<boolean> {
+  try {
+    const res = await fetch(helius, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "getTransaction",
+        params: [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }],
+      }),
+    });
+    const json = await res.json();
+    const tx = json.result;
+    if (!tx) return false;
+
+    // Verify the fee payer / first signer matches the claimed signer in memo
+    const signers: string[] = tx.transaction?.message?.accountKeys
+      ?.filter((k: any) => k.signer)
+      .map((k: any) => k.pubkey) ?? [];
+    if (!signers.includes(expectedSigner)) return false;
+
+    // Verify at least one SOL transfer to treasury exists in the tx
+    const TREASURY = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
+    const instructions = tx.transaction?.message?.instructions ?? [];
+    const hasTransfer = instructions.some((ix: any) =>
+      ix.parsed?.type === "transfer" &&
+      ix.parsed?.info?.destination === TREASURY &&
+      parseInt(ix.parsed?.info?.lamports ?? "0") > 0
+    );
+    return hasTransfer;
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -57,6 +93,10 @@ export async function GET(req: NextRequest) {
       const ts = (sig.blockTime ?? 0) * 1000;
       if (createdAt && endsAt && (ts < createdAt || ts > endsAt)) continue;
       if (auctionId && data.auctionId !== auctionId) continue;
+
+      // Validate: tx signer must match claimed bidder, and treasury transfer must exist
+      const claimedBidder = data.bidder ?? "";
+      if (!claimedBidder || !(await fetchAndValidateTx(sig.signature, claimedBidder, HELIUS))) continue;
 
       // Merge ciphertext from companion tx
       const cipher = cipherMap.get(data.commitment);

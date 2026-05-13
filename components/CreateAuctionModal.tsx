@@ -135,8 +135,8 @@ export default function CreateAuctionModal({ onClose, onCreated }: Props) {
                       setImageUrl("uploading...");
                       const fd = new FormData();
                       fd.append("file", file);
-                      fd.append("upload_preset", "blindbid_uploads");
-                      const res = await fetch("https://api.cloudinary.com/v1_1/dryopwkce/image/upload", { method: "POST", body: fd });
+                      fd.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!);
+                      const res = await fetch(`https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/image/upload`, { method: "POST", body: fd });
                       const data = await res.json();
                       setImageUrl(data.secure_url ?? "");
                     }} />

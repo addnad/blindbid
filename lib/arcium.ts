@@ -98,7 +98,8 @@ export async function submitBidToSolana(
   encryptedBid: ArciumEncryptedBid,
   amountSol: number
 ): Promise<string> {
-  const lamports = Math.round(amountSol * LAMPORTS_PER_SOL);
+  const lamports          = Math.round(amountSol * LAMPORTS_PER_SOL);
+  const PROTOCOL_FEE_LAMPORTS = 10_000; // fixed fee — hides real bid amount on-chain
 
   // 1. Arcium memo transaction (existing flow)
   const memoData = JSON.stringify({
@@ -129,10 +130,19 @@ export async function submitBidToSolana(
     SystemProgram.transfer({
       fromPubkey: walletPublicKey,
       toPubkey:   TREASURY_PUBKEY,
-      lamports,
+      lamports: PROTOCOL_FEE_LAMPORTS,
     })
   );
 
+  // Add 1 lamport transfer to TREASURY so this tx appears in TREASURY history
+  // (used by /api/chain/auctions to index REVEAL_WINNER memos)
+  memoTx.add(
+    SystemProgram.transfer({
+      fromPubkey: walletPublicKey,
+      toPubkey:   TREASURY_PUBKEY,
+      lamports:   1,
+    })
+  );
   memoTx.add({
     keys:      [{ pubkey: walletPublicKey, isSigner: true, isWritable: false }],
     programId: MEMO_PROGRAM_ID,
@@ -170,24 +180,20 @@ export async function submitBidToSolana(
     console.warn("Ciphertext memo tx failed (non-fatal):", e);
   }
 
-  // 2. Escrow place_bid — lock SOL in PDA
-  try {
-    const provider = makeProvider(walletPublicKey, signTransaction);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const program  = new Program(idl as any, provider);
-    const [escrowPDA] = getEscrowPDA(auctionId, walletPublicKey);
+  // 2. Escrow place_bid — mandatory, throws on failure so caller sees the error
+  const provider = makeProvider(walletPublicKey, signTransaction);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const program  = new Program(idl as any, provider);
+  const [escrowPDA] = getEscrowPDA(auctionId, walletPublicKey);
 
-    await program.methods
-      .placeBid(auctionId, new (await import("@coral-xyz/anchor")).BN(lamports))
-      .accounts({
-        escrow:        escrowPDA,
-        bidder:        walletPublicKey,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
-  } catch (e) {
-    console.warn("Escrow place_bid failed (non-fatal):", e);
-  }
+  await program.methods
+    .placeBid(auctionId, new (await import("@coral-xyz/anchor")).BN(lamports))
+    .accounts({
+      escrow:        escrowPDA,
+      bidder:        walletPublicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
 
   return memoSig;
 }
@@ -273,6 +279,15 @@ export async function resolveAuction(
     feePayer: walletPublicKey,
   });
 
+  // Add 1 lamport transfer to TREASURY so this tx appears in TREASURY history
+  // (used by /api/chain/auctions to index REVEAL_WINNER memos)
+  memoTx.add(
+    SystemProgram.transfer({
+      fromPubkey: walletPublicKey,
+      toPubkey:   TREASURY_PUBKEY,
+      lamports:   1,
+    })
+  );
   memoTx.add({
     keys:      [{ pubkey: walletPublicKey, isSigner: true, isWritable: false }],
     programId: MEMO_PROGRAM_ID,
@@ -344,47 +359,29 @@ export async function callArciumRevealWinner(
     computationOffset: string;
   },
 ): Promise<{ sig: string; computationOffset: string }> {
-  const bs58 = await import("bs58");
-  const provider = makeProvider(walletPublicKey, signTransaction);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const program = new Program(mxeIdl as any, provider);
-
-  // Convert ciphertext BigInt strings to [u8; 32]
-  function ciphertextToBytes(ct: string[]): number[] {
-    const val = BigInt(ct[0]);
-    const bytes = new Array(32).fill(0);
-    for (let i = 0; i < 32; i++) {
-      bytes[31 - i] = Number((val >> BigInt(i * 8)) & BigInt(0xff));
-    }
-    return bytes;
+  // Build the transaction server-side (Arcium SDK uses Node.js fs),
+  // then sign and send client-side with the user wallet.
+  const res = await fetch("/api/arcium/reveal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bidA, bidB, walletPublicKey: walletPublicKey.toString() }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error ?? "Reveal API failed");
   }
+  const { txBase64, computationOffset } = await res.json();
 
-  const encryptedBidA = ciphertextToBytes(bidA.ciphertext);
-  const encryptedBidB = ciphertextToBytes(bidB.ciphertext);
-  const bidderPubkey  = Array.from(bs58.default.decode(bidA.clientPublicKey));
-  const nonceBytes    = bs58.default.decode(bidA.nonce);
-  const nonce         = BigInt("0x" + Array.from(nonceBytes).map(b => b.toString(16).padStart(2,"0")).join(""));
+  // Deserialize, sign, and send
+  const { Transaction, sendAndConfirmRawTransaction } = await import("@solana/web3.js");
+  const txBytes = Buffer.from(txBase64, "base64");
+  const tx = Transaction.from(txBytes);
+  const signed = await signTransaction(tx);
+  const rawTx = signed.serialize();
+  const sig = await DEVNET_CONNECTION.sendRawTransaction(rawTx, { skipPreflight: false });
+  await DEVNET_CONNECTION.confirmTransaction(sig, "confirmed");
 
-  // Generate a unique computation offset
-  const offsetBytes = crypto.getRandomValues(new Uint8Array(8));
-  const compOffset  = Buffer.from(offsetBytes).readBigUInt64LE();
-
-  const sig = await program.methods
-    .revealWinner(
-      compOffset,
-      encryptedBidA,
-      encryptedBidB,
-      bidderPubkey,
-      nonce,
-    )
-    .accounts({
-      payer:             walletPublicKey,
-      mxeAccount:        BLINDBID_MXE_ACCOUNT,
-      systemProgram:     SystemProgram.programId,
-    })
-    .rpc();
-
-  return { sig, computationOffset: compOffset.toString() };
+  return { sig, computationOffset };
 }
 
 export async function pollForArciumWinner(
@@ -406,9 +403,13 @@ export async function pollForArciumWinner(
           maxSupportedTransactionVersion: 0,
         });
         const logs = tx?.meta?.logMessages ?? [];
+
+        // Only accept logs from a tx that also contains our computationOffset
+        const hasOffset = logs.some(l => l.includes(computationOffset));
+        if (!hasOffset) continue;
+
         for (const log of logs) {
           if (log.includes("WinnerRevealedEvent")) {
-            // Extract winner index from log
             const match = log.match(/winner_index['":\s]+(\w+)/);
             if (match) return match[1];
             return "resolved";

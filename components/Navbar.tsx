@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { shortenAddress } from "@/lib/arcium";
+import { shortenAddress } from "@/lib/utils";
 
 const links = [
   { label: "HOW IT WORKS", href: "/how-it-works" },
