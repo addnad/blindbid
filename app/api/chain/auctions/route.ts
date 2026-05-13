@@ -31,7 +31,7 @@ async function fetchAndValidateTx(sig: string, expectedSigner: string, helius: s
     const signers: string[] = tx.transaction?.message?.accountKeys
       ?.filter((k: any) => k.signer)
       .map((k: any) => k.pubkey) ?? [];
-    if (!signers.includes(expectedSigner)) return false;
+    if (!expectedSigner || !signers.includes(expectedSigner)) return false;
 
     // Verify at least one SOL transfer to treasury exists in the tx
     const TREASURY = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
