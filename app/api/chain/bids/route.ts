@@ -74,14 +74,46 @@ export async function GET(req: NextRequest) {
     }
 
     // First pass: collect cipher memos keyed by commitment
+    // Cipher txs are sent from bidder wallets (no treasury transfer) so they don't
+    // appear in treasury history. We extract bidders from allSigs first, then scan
+    // each bidder's recent tx history to find their SEALED_BID_CIPHER companion tx.
     const cipherMap = new Map<string, any>();
+
+    // Extract unique bidders from main bid txs in allSigs
+    const bidderSet = new Set<string>();
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
-      if (!data) continue;
-      if (data.action !== "SEALED_BID_CIPHER") continue;
+      if (!data || data.programId !== PROGRAM_ID || data.action !== "SEALED_BID") continue;
       if (auctionId && data.auctionId !== auctionId) continue;
-      if (data.commitment) cipherMap.set(data.commitment, data);
+      if (data.bidder && data.bidder !== "unknown") bidderSet.add(data.bidder);
     }
+
+    // Fetch recent txs for each bidder and find their cipher companion txs
+    await Promise.all([...bidderSet].map(async (bidder) => {
+      try {
+        const res = await fetch(HELIUS, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0", id: 1,
+            method: "getSignaturesForAddress",
+            params: [bidder, { limit: 20 }],
+          }),
+        });
+        const json = await res.json();
+        const bidderSigs: any[] = json.result ?? [];
+
+        await Promise.all(bidderSigs.map(async (s) => {
+          if (!s.memo) return;
+          const data = parseMemo(s.memo);
+          if (!data || data.action !== "SEALED_BID_CIPHER") return;
+          if (auctionId && data.auctionId !== auctionId) return;
+          if (data.bidder !== bidder) return;
+          if (!data.commitment) return;
+          cipherMap.set(data.commitment, data);
+        }));
+      } catch {}
+    }));
 
     // Pre-filter relevant bid sigs
     const bidSigs = allSigs.filter(sig => {
