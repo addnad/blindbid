@@ -30,7 +30,18 @@ export async function POST(req: NextRequest) {
     // Actually: return the constructed tx as base64 for client to sign.
 
     function ciphertextToBytes(ct: string[]): number[] {
-      const val = BigInt(ct[0]);
+      // ct[0] may be a comma-separated byte string e.g. "121,148,177,..."
+      // or a numeric string e.g. "12345678..."
+      const first = ct[0] ?? "";
+      if (first.includes(",")) {
+        // Parse as raw byte array
+        const bytes = first.split(",").map(b => parseInt(b.trim(), 10));
+        // Pad or trim to 32 bytes
+        while (bytes.length < 32) bytes.unshift(0);
+        return bytes.slice(-32);
+      }
+      // Fallback: treat as BigInt
+      const val = BigInt(first);
       const bytes = new Array(32).fill(0);
       for (let i = 0; i < 32; i++) {
         bytes[31 - i] = Number((val >> BigInt(i * 8)) & BigInt(0xff));
