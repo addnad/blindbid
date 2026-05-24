@@ -6,6 +6,8 @@ import {
   getCompDefAccOffset,
   getClusterAccAddress,
   getArciumProgramId,
+  getMempoolAccAddress,
+  getExecutingPoolAccAddress,
 } from "@arcium-hq/client";
 import { Program, AnchorProvider, BN, Wallet } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
@@ -69,14 +71,8 @@ export async function POST(req: NextRequest) {
     const compDefAccPubkey = getCompDefAccAddress(BLINDBID_PROGRAM_ID, compDefOffset);
     const compAccPubkey    = getComputationAccAddress(ARCIUM_CLUSTER_OFFSET, new BN(compOffset.toString()));
 
-    const [mempoolPubkey] = PublicKey.findProgramAddressSync(
-      [Buffer.from("Mempool"), clusterPubkey.toBuffer()],
-      arciumProgramId
-    );
-    const [execPoolPubkey] = PublicKey.findProgramAddressSync(
-      [Buffer.from("Execpool"), clusterPubkey.toBuffer()],
-      arciumProgramId
-    );
+    const mempoolPubkey = getMempoolAccAddress(ARCIUM_CLUSTER_OFFSET);
+    const execPoolPubkey = getExecutingPoolAccAddress(ARCIUM_CLUSTER_OFFSET);
     const [signPdaPubkey] = PublicKey.findProgramAddressSync(
       [Buffer.from("ArciumSignerAccount")],
       BLINDBID_PROGRAM_ID
