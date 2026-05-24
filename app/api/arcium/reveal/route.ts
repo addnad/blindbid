@@ -12,8 +12,8 @@ import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import mxeIdl from "@/lib/blindbid_mxe_idl.json";
 import bs58 from "bs58";
 
-const BLINDBID_PROGRAM_ID   = new PublicKey("EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE");
-const BLINDBID_MXE_ACCOUNT  = new PublicKey("32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML");
+const BLINDBID_PROGRAM_ID   = new PublicKey("87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh");
+const BLINDBID_MXE_ACCOUNT  = new PublicKey("4xRjKx6paGdVp3zcignmS5JZzsAEQEW7ifuyUty4mk4n");
 const ARCIUM_CLUSTER_OFFSET = 456;
 
 
