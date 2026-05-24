@@ -1,6 +1,6 @@
 # BLINDBID — Sealed-Bid Auctions on Solana × Arcium MPC
 
-> **Live:** https://blindbid.auction · **Network:** Solana Devnet
+> **Live:** https://blindbidauction.vercel.app · **Network:** Solana Devnet
 
 ---
 
