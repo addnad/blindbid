@@ -23,8 +23,8 @@ BlindBid is a trustless sealed-bid auction protocol built on Solana, powered by 
 
 | Component | Details |
 |-----------|---------|
-| **MXE Program** | `EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE` |
-| **MXE Account** | `32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML` |
+| **MXE Program** | `87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh` |
+| **MXE Account** | `4xRjKx6paGdVp3zcignmS5JZzsAEQEW7ifuyUty4mk4n` |
 | **Cluster Offset** | `456` (Arcium devnet cluster) |
 | **Encryption** | x25519 key exchange + RescueCipher via `@arcium-hq/client` SDK |
 | **MPC Circuits** | `submit_bid` + `reveal_winner` (compiled `.arcis` circuits) |
@@ -90,8 +90,8 @@ Open [http://localhost:3000](http://localhost:3000) and connect a Phantom wallet
 
 The BlindBid MXE program is deployed and verified on Solana Devnet:
 
-- [View Program on Solana Explorer](https://explorer.solana.com/address/EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE?cluster=devnet)
-- [View MXE Account](https://explorer.solana.com/address/32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML?cluster=devnet)
+- [View Program on Solana Explorer](https://explorer.solana.com/address/87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh?cluster=devnet)
+- [View MXE Account](https://explorer.solana.com/address/4xRjKx6paGdVp3zcignmS5JZzsAEQEW7ifuyUty4mk4n?cluster=devnet)
 
 ---
 
