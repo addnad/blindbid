@@ -97,4 +97,4 @@ The BlindBid MXE program is deployed and verified on Solana Devnet:
 
 ## Team
 
-Built for the **Arcium RTG Hackathon** by @1stbernice
+Built for the **Arcium RTG Hackathon** by @1st_bernice
