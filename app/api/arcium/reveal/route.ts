@@ -20,7 +20,7 @@ const ARCIUM_CLUSTER_OFFSET = 456;
 export async function POST(req: NextRequest) {
   try {
     const connection = new Connection(process.env.HELIUS_RPC_URL!, "confirmed");
-    const connection = new Connection(process.env.HELIUS_RPC_URL!, "confirmed");
+
     const { bidA, bidB, walletPublicKey: walletPkStr, signedTxBase64 } = await req.json();
 
     // We can't sign server-side with user wallet, so we build the tx,
@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const connection = new Connection(process.env.HELIUS_RPC_URL!, "confirmed");
-    const connection = new Connection(process.env.HELIUS_RPC_URL!, "confirmed");
+
     const { searchParams } = new URL(req.url);
     const computationOffset = searchParams.get("computationOffset");
     const mxeProgramId = searchParams.get("mxeProgramId") ?? "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
