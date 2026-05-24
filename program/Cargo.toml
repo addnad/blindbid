@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "encrypted-ixs",
     "programs/*"
 ]
 resolver = "2"

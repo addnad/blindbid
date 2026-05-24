@@ -5,14 +5,14 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-blindbid_mxe = "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE"
+[programs.devnet]
+blindbid_mxe = "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

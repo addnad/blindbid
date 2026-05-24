@@ -1,321 +1,283 @@
 use anchor_lang::prelude::*;
-use anchor_lang::system_program;
+use arcium_anchor::prelude::*;
+use arcium_client::idl::arcium::types::CallbackAccount;
 
-declare_id!("11111111111111111111111111111111");
+const COMP_DEF_OFFSET_SUBMIT_BID: u32 = comp_def_offset("submit_bid");
+const COMP_DEF_OFFSET_REVEAL_WINNER: u32 = comp_def_offset("reveal_winner");
 
-#[program]
+declare_id!("87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh");
+
+#[arcium_program]
 pub mod blindbid_program {
     use super::*;
 
-    // Create a new sealed-bid auction
-    pub fn create_auction(
-        ctx: Context<CreateAuction>,
-        auction_id: String,
-        name: String,
-        floor_lamports: u64,
-        ends_at: i64,
-        auction_type: u8, // 0=Vickrey, 1=Uniform, 2=FirstPrice
+    pub fn init_submit_bid_comp_def(ctx: Context<InitSubmitBidCompDef>) -> Result<()> {
+        init_comp_def(ctx.accounts, None, None)?;
+        Ok(())
+    }
+
+    pub fn init_reveal_winner_comp_def(ctx: Context<InitRevealWinnerCompDef>) -> Result<()> {
+        init_comp_def(ctx.accounts, None, None)?;
+        Ok(())
+    }
+
+    pub fn submit_bid(
+        ctx: Context<SubmitBid>,
+        computation_offset: u64,
+        encrypted_bid: [u8; 32],
+        bidder_pubkey: [u8; 32],
+        nonce: u128,
     ) -> Result<()> {
-        let auction = &mut ctx.accounts.auction;
-        let clock = Clock::get()?;
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-        require!(ends_at > clock.unix_timestamp, BlindBidError::InvalidEndTime);
-        require!(floor_lamports > 0, BlindBidError::InvalidFloor);
-        require!(auction_id.len() <= 16, BlindBidError::StringTooLong);
-        require!(name.len() <= 64, BlindBidError::StringTooLong);
+        let args = ArgBuilder::new()
+            .x25519_pubkey(bidder_pubkey)
+            .plaintext_u128(nonce)
+            .encrypted_u8(encrypted_bid)
+            .build();
 
-        auction.creator       = ctx.accounts.creator.key();
-        auction.auction_id    = auction_id;
-        auction.name          = name;
-        auction.floor_lamports = floor_lamports;
-        auction.ends_at       = ends_at;
-        auction.auction_type  = auction_type;
-        auction.bid_count     = 0;
-        auction.settled       = false;
-        auction.created_at    = clock.unix_timestamp;
-        auction.bump          = ctx.bumps.auction;
-
-        emit!(AuctionCreated {
-            creator:    ctx.accounts.creator.key(),
-            auction_id: auction.auction_id.clone(),
-            ends_at,
-        });
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![SubmitBidCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[],
+            )?],
+            1,
+            0,
+        )?;
 
         Ok(())
     }
 
-    // Place an encrypted sealed bid
-    pub fn place_bid(
-        ctx: Context<PlaceBid>,
-        commitment: String,      // SHA-256 hash of bid amount
-        client_pubkey: String,   // Arcium x25519 ephemeral pubkey
-        computation_offset: String, // Arcium computation ID
-        amount_lamports: u64,    // Actual bid amount in lamports
+    #[arcium_callback(encrypted_ix = "submit_bid")]
+    pub fn submit_bid_callback(
+        ctx: Context<SubmitBidCallback>,
+        output: SignedComputationOutputs<SubmitBidOutput>,
     ) -> Result<()> {
-        let auction = &mut ctx.accounts.auction;
-        let clock   = Clock::get()?;
-
-        require!(!auction.settled, BlindBidError::AuctionSettled);
-        require!(clock.unix_timestamp < auction.ends_at, BlindBidError::AuctionEnded);
-        require!(amount_lamports >= auction.floor_lamports, BlindBidError::BelowFloor);
-        require!(commitment.len() <= 64, BlindBidError::StringTooLong);
-
-        // Transfer bid SOL to escrow PDA
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.system_program.to_account_info(),
-            system_program::Transfer {
-                from: ctx.accounts.bidder.to_account_info(),
-                to:   ctx.accounts.escrow.to_account_info(),
-            },
-        );
-        system_program::transfer(cpi_ctx, amount_lamports)?;
-
-        // Store bid record
-        let bid = &mut ctx.accounts.bid;
-        bid.auction    = auction.key();
-        bid.bidder     = ctx.accounts.bidder.key();
-        bid.commitment = commitment.clone();
-        bid.client_pubkey       = client_pubkey;
-        bid.computation_offset  = computation_offset;
-        bid.amount_lamports     = amount_lamports;
-        bid.placed_at           = clock.unix_timestamp;
-        bid.refunded            = false;
-        bid.bump                = ctx.bumps.bid;
-
-        auction.bid_count += 1;
-
-        emit!(BidPlaced {
-            auction: auction.key(),
-            bidder:  ctx.accounts.bidder.key(),
-            commitment,
-        });
-
-        Ok(())
-    }
-
-    // Settle auction — refund all losers, pay winner
-    // In production Arcium MPC reveals the winner; here creator submits winner
-    pub fn settle(
-        ctx: Context<Settle>,
-        winner: Pubkey,
-        winning_amount: u64,
-    ) -> Result<()> {
-        let auction = &mut ctx.accounts.auction;
-        let clock   = Clock::get()?;
-
-        require!(!auction.settled, BlindBidError::AuctionSettled);
-        require!(clock.unix_timestamp >= auction.ends_at, BlindBidError::AuctionNotEnded);
-        require!(
-            ctx.accounts.creator.key() == auction.creator,
-            BlindBidError::Unauthorized
-        );
-
-        auction.settled = true;
-        auction.winner  = Some(winner);
-
-        emit!(AuctionSettled {
-            auction: auction.key(),
-            winner,
-            winning_amount,
-        });
-
-        Ok(())
-    }
-
-    // Refund a single losing bid from escrow
-    pub fn refund_bid(ctx: Context<RefundBid>) -> Result<()> {
-        let bid     = &mut ctx.accounts.bid;
-        let auction = &ctx.accounts.auction;
-
-        require!(auction.settled, BlindBidError::AuctionNotSettled);
-        require!(!bid.refunded, BlindBidError::AlreadyRefunded);
-
-        // Only refund if not the winner
-        if let Some(winner) = auction.winner {
-            require!(bid.bidder != winner, BlindBidError::WinnerCannotRefund);
+        match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(ErrorCode::AbortedComputation.into()),
         }
+    }
 
-        bid.refunded = true;
+    pub fn reveal_winner(
+        ctx: Context<RevealWinner>,
+        computation_offset: u64,
+        encrypted_bid_a: [u8; 32],
+        encrypted_bid_b: [u8; 32],
+        bidder_pubkey: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
-        let amount = bid.amount_lamports;
-        let escrow = &mut ctx.accounts.escrow;
-        let bidder = &ctx.accounts.bidder;
+        let args = ArgBuilder::new()
+            .x25519_pubkey(bidder_pubkey)
+            .plaintext_u128(nonce)
+            .encrypted_u8(encrypted_bid_a)
+            .encrypted_u8(encrypted_bid_b)
+            .build();
 
-        // Transfer from escrow PDA back to bidder
-        **escrow.to_account_info().try_borrow_mut_lamports()? -= amount;
-        **bidder.to_account_info().try_borrow_mut_lamports()? += amount;
-
-        emit!(BidRefunded {
-            auction: auction.key(),
-            bidder:  bid.bidder,
-            amount,
-        });
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![RevealWinnerCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[],
+            )?],
+            1,
+            0,
+        )?;
 
         Ok(())
     }
+
+    #[arcium_callback(encrypted_ix = "reveal_winner")]
+    pub fn reveal_winner_callback(
+        ctx: Context<RevealWinnerCallback>,
+        output: SignedComputationOutputs<RevealWinnerOutput>,
+    ) -> Result<()> {
+        match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(RevealWinnerOutput { field_0: winner_index }) => {
+                emit!(WinnerRevealed {
+                    winner_index,
+                });
+                Ok(())
+            }
+            Err(_) => Err(ErrorCode::AbortedComputation.into()),
+        }
+    }
 }
 
-// ── Account structs ──────────────────────────────────────────────────────
-
-#[account]
-pub struct AuctionAccount {
-    pub creator:         Pubkey,   // 32
-    pub auction_id:      String,   // 4 + 16
-    pub name:            String,   // 4 + 64
-    pub floor_lamports:  u64,      // 8
-    pub ends_at:         i64,      // 8
-    pub auction_type:    u8,       // 1
-    pub bid_count:       u32,      // 4
-    pub settled:         bool,     // 1
-    pub winner:          Option<Pubkey>, // 33
-    pub created_at:      i64,      // 8
-    pub bump:            u8,       // 1
-}
-
-#[account]
-pub struct BidAccount {
-    pub auction:              Pubkey,  // 32
-    pub bidder:               Pubkey,  // 32
-    pub commitment:           String,  // 4 + 64
-    pub client_pubkey:        String,  // 4 + 64
-    pub computation_offset:   String,  // 4 + 16
-    pub amount_lamports:      u64,     // 8
-    pub placed_at:            i64,     // 8
-    pub refunded:             bool,    // 1
-    pub bump:                 u8,      // 1
-}
-
-// ── Contexts ─────────────────────────────────────────────────────────────
-
+#[init_computation_definition_accounts("submit_bid", payer)]
 #[derive(Accounts)]
-#[instruction(auction_id: String)]
-pub struct CreateAuction<'info> {
+pub struct InitSubmitBidCompDef<'info> {
     #[account(mut)]
-    pub creator: Signer<'info>,
-
-    #[account(
-        init,
-        payer = creator,
-        space = 8 + 32 + (4+16) + (4+64) + 8 + 8 + 1 + 4 + 1 + 33 + 8 + 1,
-        seeds = [b"auction", creator.key().as_ref(), auction_id.as_bytes()],
-        bump
-    )]
-    pub auction: Account<'info, AuctionAccount>,
-
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by arcium program.
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by arcium program.
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program.
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
     pub system_program: Program<'info, System>,
 }
 
+#[init_computation_definition_accounts("reveal_winner", payer)]
 #[derive(Accounts)]
-pub struct PlaceBid<'info> {
+pub struct InitRevealWinnerCompDef<'info> {
     #[account(mut)]
-    pub bidder: Signer<'info>,
-
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut)]
-    pub auction: Account<'info, AuctionAccount>,
-
-    #[account(
-        init,
-        payer = bidder,
-        space = 8 + 32 + 32 + (4+64) + (4+64) + (4+16) + 8 + 8 + 1 + 1,
-        seeds = [b"bid", auction.key().as_ref(), bidder.key().as_ref()],
-        bump
-    )]
-    pub bid: Account<'info, BidAccount>,
-
-    /// CHECK: PDA escrow holding bid SOL
-    #[account(
-        mut,
-        seeds = [b"escrow", auction.key().as_ref()],
-        bump
-    )]
-    pub escrow: UncheckedAccount<'info>,
-
+    /// CHECK: comp_def_account, checked by arcium program.
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by arcium program.
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program.
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
     pub system_program: Program<'info, System>,
 }
 
+#[queue_computation_accounts("submit_bid", payer)]
 #[derive(Accounts)]
-pub struct Settle<'info> {
+#[instruction(computation_offset: u64)]
+pub struct SubmitBid<'info> {
     #[account(mut)]
-    pub creator: Signer<'info>,
-
-    #[account(mut, has_one = creator)]
-    pub auction: Account<'info, AuctionAccount>,
-}
-
-#[derive(Accounts)]
-pub struct RefundBid<'info> {
-    /// CHECK: bidder receiving refund
-    #[account(mut)]
-    pub bidder: UncheckedAccount<'info>,
-
-    #[account(mut, has_one = bidder)]
-    pub bid: Account<'info, BidAccount>,
-
-    pub auction: Account<'info, AuctionAccount>,
-
-    /// CHECK: PDA escrow
+    pub payer: Signer<'info>,
     #[account(
-        mut,
-        seeds = [b"escrow", auction.key().as_ref()],
-        bump
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
     )]
-    pub escrow: UncheckedAccount<'info>,
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: mempool_account
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: executing_pool
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: computation_account
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_SUBMIT_BID))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
 }
 
-// ── Errors ───────────────────────────────────────────────────────────────
+#[callback_accounts("submit_bid")]
+#[derive(Accounts)]
+pub struct SubmitBidCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_SUBMIT_BID))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
+    /// CHECK: instructions_sysvar
+    pub instructions_sysvar: AccountInfo<'info>,
+}
+
+#[queue_computation_accounts("reveal_winner", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct RevealWinner<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: mempool_account
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: executing_pool
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account, ErrorCode::ClusterNotSet))]
+    /// CHECK: computation_account
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_REVEAL_WINNER))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("reveal_winner")]
+#[derive(Accounts)]
+pub struct RevealWinnerCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_REVEAL_WINNER))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account, ErrorCode::ClusterNotSet))]
+    pub cluster_account: Account<'info, Cluster>,
+    #[account(address = ::anchor_lang::solana_program::sysvar::instructions::ID)]
+    /// CHECK: instructions_sysvar
+    pub instructions_sysvar: AccountInfo<'info>,
+}
+
+#[event]
+pub struct WinnerRevealed {
+    pub winner_index: u8,
+}
 
 #[error_code]
-pub enum BlindBidError {
-    #[msg("Auction has already been settled")]
-    AuctionSettled,
-    #[msg("Auction has not ended yet")]
-    AuctionNotEnded,
-    #[msg("Auction has already ended")]
-    AuctionEnded,
-    #[msg("Auction is not yet settled")]
-    AuctionNotSettled,
-    #[msg("Bid is below the floor price")]
-    BelowFloor,
-    #[msg("Invalid end time")]
-    InvalidEndTime,
-    #[msg("Invalid floor price")]
-    InvalidFloor,
-    #[msg("String too long")]
-    StringTooLong,
-    #[msg("Unauthorized")]
-    Unauthorized,
-    #[msg("Already refunded")]
-    AlreadyRefunded,
-    #[msg("Winner cannot claim refund")]
-    WinnerCannotRefund,
-}
-
-// ── Events ───────────────────────────────────────────────────────────────
-
-#[event]
-pub struct AuctionCreated {
-    pub creator:    Pubkey,
-    pub auction_id: String,
-    pub ends_at:    i64,
-}
-
-#[event]
-pub struct BidPlaced {
-    pub auction:    Pubkey,
-    pub bidder:     Pubkey,
-    pub commitment: String,
-}
-
-#[event]
-pub struct AuctionSettled {
-    pub auction:        Pubkey,
-    pub winner:         Pubkey,
-    pub winning_amount: u64,
-}
-
-#[event]
-pub struct BidRefunded {
-    pub auction: Pubkey,
-    pub bidder:  Pubkey,
-    pub amount:  u64,
+pub enum ErrorCode {
+    #[msg("The computation was aborted")]
+    AbortedComputation,
+    #[msg("Cluster not set")]
+    ClusterNotSet,
 }
