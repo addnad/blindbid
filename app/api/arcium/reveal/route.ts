@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const computationOffset = searchParams.get("computationOffset");
-    const mxeProgramId = searchParams.get("mxeProgramId") ?? "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
+    const mxeProgramId = searchParams.get("mxeProgramId") ?? "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh";
 
     if (!computationOffset) {
       return NextResponse.json({ error: "Missing computationOffset" }, { status: 400 });

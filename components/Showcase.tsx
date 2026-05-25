@@ -73,7 +73,7 @@ function BidButton({ auction, onBid }: { auction: Auction; onBid: () => void }) 
 function OnChainLink({ txSignature }: { txSignature?: string }) {
   const href = txSignature
     ? "https://explorer.solana.com/tx/" + txSignature + "?cluster=devnet"
-    : "https://explorer.solana.com/address/EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE?cluster=devnet";
+    : "https://explorer.solana.com/address/87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh?cluster=devnet";
   return (
     <a href={href} target="_blank" rel="noreferrer"
       className="flex items-center justify-center h-[52px] px-[32px] bg-[#0A0A0A] hover:border-[#555] transition-colors"

@@ -4,8 +4,8 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { AnchorProvider } from "@coral-xyz/anchor";
 import bs58 from "bs58";
 
-const MXE_PROGRAM_ID = new PublicKey("EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE");
-const MXE_ACCOUNT    = new PublicKey("32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML");
+const MXE_PROGRAM_ID = new PublicKey("87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh");
+const MXE_ACCOUNT    = new PublicKey("4xRjKx6paGdVp3zcignmS5JZzsAEQEW7ifuyUty4mk4n");
 const connection     = new Connection(process.env.HELIUS_RPC_URL ?? "https://api.devnet.solana.com", "confirmed");
 
 export async function POST(req: NextRequest) {

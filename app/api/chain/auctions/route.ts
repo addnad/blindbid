@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const HELIUS    = process.env.HELIUS_RPC_URL!;
 const TREASURY  = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
-const PROGRAM_ID   = "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE";
+const PROGRAM_ID   = "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh";
 const ACCENTS      = ["#9945FF","#4ADE80","#60A5FA","#A78BFA","#FF6B35","#FACC15"];
 
 function parseMemo(memo: string | null): any {
