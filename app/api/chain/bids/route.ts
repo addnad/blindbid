@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const HELIUS    = process.env.HELIUS_RPC_URL!;
 const TREASURY  = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
-const PROGRAM_ID = "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh";
+const PROGRAM_IDS = ["87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh", "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE"];
 
 function parseMemo(memo: string | null): any {
   if (!memo) return null;
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
     const bidderSet = new Set<string>();
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
-      if (!data || data.programId !== PROGRAM_ID || data.action !== "SEALED_BID") continue;
+      if (!data || !PROGRAM_IDS.includes(data.programId) || data.action !== "SEALED_BID") continue;
       if (auctionId && data.auctionId !== auctionId) continue;
       if (data.bidder && data.bidder !== "unknown") bidderSet.add(data.bidder);
     }
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
     // Pre-filter relevant bid sigs
     const bidSigs = allSigs.filter(sig => {
       const data = parseMemo(sig.memo);
-      if (!data || data.programId !== PROGRAM_ID || data.action !== "SEALED_BID") return false;
+      if (!data || !PROGRAM_IDS.includes(data.programId) || data.action !== "SEALED_BID") return false;
       const ts = (sig.blockTime ?? 0) * 1000;
       if (createdAt && endsAt && (ts < createdAt || ts > endsAt)) return false;
       if (auctionId && data.auctionId !== auctionId) return false;
@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
       if (!data) continue;
-      if (data.programId !== PROGRAM_ID) continue;
+      if (!PROGRAM_IDS.includes(data.programId)) continue;
       if (data.action !== "SEALED_BID") continue;
 
       const ts = (sig.blockTime ?? 0) * 1000;

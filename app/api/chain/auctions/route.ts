@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const HELIUS    = process.env.HELIUS_RPC_URL!;
 const TREASURY  = "5nTn8mgEEViXYna6fmTpfV1EuwdQD7kNcJ7SPevuea7f";
-const PROGRAM_ID   = "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh";
+const PROGRAM_IDS  = ["87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh", "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE"];
 const ACCENTS      = ["#9945FF","#4ADE80","#60A5FA","#A78BFA","#FF6B35","#FACC15"];
 
 function parseMemo(memo: string | null): any {
@@ -79,7 +79,7 @@ export async function GET() {
     // First pass: collect all reveals
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
-      if (!data || data.programId !== PROGRAM_ID) continue;
+      if (!data || !PROGRAM_IDS.includes(data.programId)) continue;
       if (data.action === "REVEAL_WINNER") {
         revealedWinners.set(data.auctionId, data.winner ?? "");
         revealedAuctionIds.add(data.auctionId);
@@ -89,7 +89,7 @@ export async function GET() {
     // Pre-validate all relevant sigs in parallel before building auctions/bids
     const validationTargets = allSigs
       .map(sig => ({ sig, data: parseMemo(sig.memo) }))
-      .filter(({ data }) => data && data.programId === PROGRAM_ID)
+      .filter(({ data }) => data && PROGRAM_IDS.includes(data.programId))
       .filter(({ data }) => data.action === "CREATE_AUCTION" || data.action === "SEALED_BID");
 
     const validationResults = await Promise.all(
@@ -104,7 +104,7 @@ export async function GET() {
     // Second pass: build auctions and bids
     for (const sig of allSigs) {
       const data = parseMemo(sig.memo);
-      if (!data || data.programId !== PROGRAM_ID) continue;
+      if (!data || !PROGRAM_IDS.includes(data.programId)) continue;
       const blockTime = (sig.blockTime ?? 0) * 1000;
 
       if (data.action === "CREATE_AUCTION") {
