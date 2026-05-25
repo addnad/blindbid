@@ -386,35 +386,18 @@ export async function callArciumRevealWinner(
 
 export async function pollForArciumWinner(
   computationOffset: string,
-  timeoutMs = 60000,
+  timeoutMs = 90000,
 ): Promise<string | null> {
-  const mxeProgramId = BLINDBID_PROGRAM_ID;
   const start = Date.now();
-
   while (Date.now() - start < timeoutMs) {
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 4000));
     try {
-      const sigs = await DEVNET_CONNECTION.getSignaturesForAddress(
-        mxeProgramId, { limit: 20 }
+      const res = await fetch(
+        `/api/arcium/reveal?computationOffset=${encodeURIComponent(computationOffset)}&mxeProgramId=${BLINDBID_PROGRAM_ID.toBase58()}`
       );
-      for (const sig of sigs) {
-        const tx = await DEVNET_CONNECTION.getParsedTransaction(sig.signature, {
-          commitment: "confirmed",
-          maxSupportedTransactionVersion: 0,
-        });
-        const logs = tx?.meta?.logMessages ?? [];
-
-        // Only accept logs from a tx that also contains our computationOffset
-        const hasOffset = logs.some(l => l.includes(computationOffset));
-        if (!hasOffset) continue;
-
-        for (const log of logs) {
-          if (log.includes("WinnerRevealedEvent")) {
-            const match = log.match(/winner_index['":\s]+(\w+)/);
-            if (match) return match[1];
-            return "resolved";
-          }
-        }
+      const data = await res.json();
+      if (data.winnerIndex === "0" || data.winnerIndex === "1") {
+        return data.winnerIndex;
       }
     } catch {}
   }
