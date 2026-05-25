@@ -23,11 +23,11 @@ export const MEMO_PROGRAM_ID = new PublicKey(
 );
 
 export const BLINDBID_PROGRAM_ID = new PublicKey(
-  "EaDV1kv2CAbGVD42mhD5okEfBAABz4n38yCAY7YiaqYE"
+  "87ze8FFkYPnUaXUQZwoC2K14p6ju8YYCaAG7nGB8HLUh"
 );
 
 export const BLINDBID_MXE_ACCOUNT = new PublicKey(
-  "32X9V2EjQQ4E9GtvFR3UQXd1GyLziPK9S8NuvQNYb5ML"
+  "4xRjKx6paGdVp3zcignmS5JZzsAEQEW7ifuyUty4mk4n"
 );
 
 export const ESCROW_PROGRAM_ID = new PublicKey(
